@@ -62,6 +62,18 @@ a{color:var(--accent)}
 /* the right-hand buttons stay together and move to a second row when the bar is too narrow */
 .barR{display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:flex-end; margin-left:auto}
 .bar .btn{flex:0 0 auto}
+/* the file and its settings: one group in the bar */
+.filegrp{display:inline-flex; align-items:center; gap:2px; padding:2px; border:1px solid var(--rule); border-radius:8px; background:var(--surface-2)}
+.filegrp .btn{border-color:transparent; background:transparent; box-shadow:none}
+.filegrp .btn:hover:not(:disabled){background:var(--surface); border-color:var(--rule)}
+.fgsep{width:1px; align-self:stretch; margin:3px 4px; background:var(--rule)}
+.fglbl{font-size:11.5px; color:var(--muted); padding:0 2px 0 4px; white-space:nowrap}
+#cfgSave{position:relative}
+#cfgSave .dirtydot{display:none; position:absolute; top:-3px; right:-3px; width:9px; height:9px; border-radius:50%;
+  background:#F59E0B; box-shadow:0 0 0 2px var(--surface-2)}
+#cfgSave.dirty{color:var(--accent); font-weight:600; background:var(--surface); border-color:#F59E0B}
+#cfgSave.dirty .dirtydot{display:block}
+@media (max-width:900px){ .fglbl{display:none} }
 @media (max-width:1200px){ .bar .ver{display:none} }
 .btn{
   border:1px solid var(--rule); background:var(--surface); color:var(--ink);
@@ -819,7 +831,7 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
 
 <div class="bar">
   <h1 id="appTitle">SPSS Crosstabs</h1>
-  <span class="ver">version 6.0</span>
+  <span class="ver">version 6.1</span>
   <div class="seg viewsw" id="viewSw" role="group" style="display:none">
     <button type="button" id="viewTables" aria-pressed="true" data-i18n="view.tables"></button>
     <button type="button" id="railData" aria-pressed="false"><span class="lbl"></span></button>
@@ -831,7 +843,14 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
   <button class="btn small wchip" id="weightChip" style="display:none" aria-haspopup="dialog"></button>
   <select id="selWeight" class="vh" tabindex="-1" aria-hidden="true"></select>
   <button class="btn small" id="btnToc" style="display:none"></button>
-  <button class="btn" id="btnNew" data-i18n="bar.newfile" style="display:none">Another file</button>
+  <div class="filegrp" id="fileGrp" style="display:none" role="group">
+    <button class="btn small" id="btnNew" data-i18n="bar.newfile">Another file</button>
+    <span class="fgsep" aria-hidden="true"></span>
+    <span class="fglbl" id="cfgLbl" data-i18n="expb.cfg"></span>
+    <button class="btn small" id="cfgSave"><span data-i18n="cfg.saveShort"></span><i class="dirtydot" aria-hidden="true"></i></button>
+    <label class="btn small" id="cfgLoad" for="cfgInput" role="button" tabindex="0" data-i18n="cfg.loadShort"></label>
+    <input type="file" id="cfgInput" class="vh" accept=".json,application/json" tabindex="-1">
+  </div>
   <button class="btn word" id="btnWord" disabled>Word</button>
   <button class="btn excel" id="btnExcel" disabled>Excel</button>
   <button class="btn spss" id="btnSav" disabled>SPSS</button>
@@ -1105,15 +1124,6 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
           <p class="mini" data-i18n="sav.hint"></p>
         </section>
 
-        <section class="expblock">
-          <h3 class="exph"><span class="expico">⚙</span><span data-i18n="expb.cfg"></span></h3>
-          <div class="row-flex expbtns">
-            <button class="btn small" id="cfgSave" data-i18n="cfg.save"></button>
-            <label class="btn small" id="cfgLoad" for="cfgInput" role="button" tabindex="0" data-i18n="cfg.load"></label>
-            <input type="file" id="cfgInput" class="vh" accept=".json,application/json" tabindex="-1">
-          </div>
-          <p class="mini" data-i18n="cfg.hint"></p>
-        </section>
       </div>
     </details>
 
@@ -8420,7 +8430,7 @@ var DICT = {
     'legend.edit':'view and edit the question text and value labels',
     'legend.banner':'add the variable to the active banner',
     'legend.inbanner':'a highlighted icon means the variable is already in the banner',
-    'cfg.save':'Save settings', 'cfg.load':'Load settings', 'tech.remove':'Remove',
+    'cfg.save':'Save settings', 'cfg.load':'Load settings', 'cfg.saveShort':'Save', 'cfg.loadShort':'Load', 'cfg.dirty':'There are unsaved changes in the settings', 'tech.remove':'Remove',
     'cfg.quotaLogos':'The logos are too large for the browser to remember: the other settings are kept. To keep the logos too, save the settings to a file (Export → Settings).',
     'cfg.quota':'The browser could not remember the settings (its storage is full). Save them to a file: Export → Settings.',
     'cfg.hint':'Settings go into a .json file: banner, selected variables, response sets, technical categories, all options, the interactive report setup (title, text, language, colours, logos), section headings and analytical comments, modified tables and corrected labels, and the dataset edits (matched by the ID variable). No other data, only variable names; the report password is never saved. To update a report on a new file with the same structure: open the file, load the settings, then save the report again.',
@@ -8620,7 +8630,7 @@ var DICT = {
     'legend.edit':'переглянути й виправити текст питання та мітки значень',
     'legend.banner':'додати змінну в активний банер',
     'legend.inbanner':'підсвічена позначка означає, що змінна вже в банері',
-    'cfg.save':'Зберегти налаштування', 'cfg.load':'Завантажити налаштування', 'tech.remove':'Прибрати',
+    'cfg.save':'Зберегти налаштування', 'cfg.load':'Завантажити налаштування', 'cfg.saveShort':'Зберегти', 'cfg.loadShort':'Завантажити', 'cfg.dirty':'Є незбережені зміни в налаштуваннях', 'tech.remove':'Прибрати',
     'cfg.quotaLogos':'Логотипи завеликі, щоб браузер їх запам’ятав: решту налаштувань збережено. Щоб зберегти й логотипи, збережіть налаштування у файл (Експорт → Налаштування).',
     'cfg.quota':'Браузер не зміг запам’ятати налаштування (сховище заповнене). Збережіть їх у файл: Експорт → Налаштування.',
     'cfg.hint':'Налаштування зберігаються у файл .json: банер, обрані змінні, набори відповідей, технічні категорії, усі опції, параметри інтерактивного звіту (назва, текст, мова, кольори, логотипи), заголовки розділів і аналітичні коментарі, модифіковані таблиці, виправлені мітки та правки масиву (за змінною ID). Інших даних там немає, лише назви змінних; пароль звіту не зберігається. Щоб оновити звіт на новому масиві тієї ж структури: відкрийте масив, завантажте налаштування й збережіть звіт заново.',
@@ -9073,6 +9083,7 @@ function applyI18n(){
   segTitles();
   syncTabLabels();
   openBarText();
+  paintDirty($('cfgSave').classList.contains('dirty'));
 }
 
 /* ---------------- state ---------------- */
@@ -9264,8 +9275,26 @@ function currentConfig(){
 }
 /* the browser keeps about 5 MB per site; logos are the bulky part, so they are dropped first */
 var cfgWarned = false;
+/* unsaved settings: the current settings differ from the ones last saved to (or loaded from) a file */
+var cfgBase = null;
+function cfgSig(cfg){
+  var c = Object.assign({}, cfg || currentConfig());
+  /* the order of ticking matters only for the manual order of tables */
+  if (!c.ui || c.ui.rowOrder !== 'manual') delete c.rowSeq;
+  return JSON.stringify(c) + '#' + (state.dataLog ? state.dataLog.length : 0);
+}
+function paintDirty(on){
+  var b = $('cfgSave'); if (!b) return;
+  b.classList.toggle('dirty', !!on);
+  b.title = on ? L('cfg.dirty') + '. ' + L('cfg.hint') : L('cfg.save') + '. ' + L('cfg.hint');
+  $('cfgLoad').title = L('cfg.load');
+}
+function markClean(){ if (state.data){ cfgBase = cfgSig(); paintDirty(false); } }
+function checkDirty(cfg){ if (!state.data || cfgBase === null) return; paintDirty(cfgSig(cfg) !== cfgBase); }
+setInterval(function(){ if (state.data && state.dataLog && state.dataLog.length !== checkDirty.n){ checkDirty.n = state.dataLog.length; checkDirty(); } }, 1500);
 function saveConfig(){
   var cfg = currentConfig();
+  checkDirty(cfg);
   try{ localStorage.setItem('spss-ctab-config', JSON.stringify(cfg)); return; }catch(e){}
   try{
     var lean = JSON.parse(JSON.stringify(cfg));
@@ -9410,7 +9439,7 @@ function afterLoad(){
   var d = state.data;
   $('intro').style.display = 'none';
   $('work').classList.add('on');
-  $('btnNew').style.display = '';
+  $('fileGrp').style.display = '';
   $('viewSw').style.display = '';
 
   var sel = $('selWeight');
@@ -9451,6 +9480,7 @@ function afterLoad(){
   renderFileInfo(); renderDataNotes(); updateWeightChip(); renderVarList(); renderBannerUi(); renderMrList();
   status('', false);
   scheduleCompute();
+  markClean();
   /* a likely weight variable that is not in use yet: offer it once, with a button */
   var guess = weightGuess();
   if (!state.weightName && guess) setTimeout(function(){
@@ -11537,7 +11567,7 @@ $('cfgSave').addEventListener('click', function(){
   else if (de) cfg.dataEdits = de;
   var blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
   var fn = (baseName() || 'spss') + '_settings.json';
-  saveFile(blob, fn).then(function(){ toast(P().cfgSaved(fn)); });
+  saveFile(blob, fn).then(function(){ toast(P().cfgSaved(fn)); markClean(); });
 });
 function keyOpens(labelId, inputId){
   $(labelId).addEventListener('keydown', function(e){
@@ -11563,6 +11593,7 @@ $('cfgInput').addEventListener('change', function(e){
     if (cfg.file && cfg.file !== state.fileName) toast(P().cfgOther(cfg.file));
     else toast(P().cfgLoaded(res.rows, res.missing));
     if (cfg.dataEdits) applyConfigDataEdits(cfg.dataEdits);
+    setTimeout(markClean, 0);
   };
   fr.readAsText(file);
 });
@@ -13427,7 +13458,7 @@ $('btnNew').addEventListener('click', function(){
   $('btnSav').disabled = true;
   state.data = null; state.models = []; state.vars = [];
   $('work').classList.remove('on'); $('intro').style.display = '';
-  $('btnNew').style.display = 'none'; $('fileInfo').textContent = ''; $('fileInfo').style.display = 'none'; $('viewSw').style.display = 'none';
+  $('fileGrp').style.display = 'none'; cfgBase = null; paintDirty(false); $('fileInfo').textContent = ''; $('fileInfo').style.display = 'none'; $('viewSw').style.display = 'none';
   $('fileInput').value = '';
 });
 var drop = $('drop');
