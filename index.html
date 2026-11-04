@@ -831,7 +831,7 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
 
 <div class="bar">
   <h1 id="appTitle">SPSS Crosstabs</h1>
-  <span class="ver">version 6.1.1</span>
+  <span class="ver">version 6.1.2</span>
   <div class="seg viewsw" id="viewSw" role="group" style="display:none">
     <button type="button" id="viewTables" aria-pressed="true" data-i18n="view.tables"></button>
     <button type="button" id="railData" aria-pressed="false"><span class="lbl"></span></button>
@@ -1932,7 +1932,7 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
     }
     out.push('<sheetData>');
     for (var r = 0; r < rows.length; r++) {
-      var row = rows[r], cells = ['<row r="' + (r + 1) + '">'];
+      var row = rows[r], cells = ['<row r="' + (r + 1) + '"' + (r === 0 && opts.headerHeight ? ' ht="' + opts.headerHeight + '" customHeight="1"' : '') + '>'];
       var style = r === 0 && opts.header ? ' s="1"' : (opts.wrap ? ' s="2"' : '');
       for (var c = 0; c < row.length; c++) {
         var v = row[c], ref = colName(c) + (r + 1);
@@ -1980,7 +1980,8 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
     var vs = order.map(function (i) { return o.vars[i]; });
     var widths = vs.map(function (v) { return Math.max(v.dateKind === 'datetime' ? 17 : v.dateKind ? 12 : 9, Math.min(28, String(v.name).length + 3)); });
     var dataSheet = function (asLabels, name) {
-      var rows = [vs.map(function (v) { return v.name; })];
+      /* the labels sheet is headed by the question texts, the codes sheet by the variable names */
+      var rows = [vs.map(function (v) { return asLabels && v.label ? v.label : v.name; })];
       for (var k = 0; k < o.rows.length; k++) {
         if (o.onProgress && k % 1000 === 0) o.onProgress((sheets.length + k / o.rows.length) / ((o.sheets.codes ? 1 : 0) + (o.sheets.labels ? 1 : 0) + 1));
         var i = o.rows[k], line = new Array(vs.length);
@@ -2000,8 +2001,15 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
         }
         rows.push(line);
       }
-      var lw = asLabels ? vs.map(function (v, j) { return v.labels ? Math.max(widths[j], 18) : widths[j]; }) : widths;
-      sheets.push({ name: name, sh: sheetXml(rows, sst, { header: true, widths: lw, freeze: { x: o.idIndex >= 0 ? 1 : 0, y: 1 }, filter: true, tabSelected: !sheets.length }) });
+      var lw = asLabels ? vs.map(function (v, j) {
+        var w = v.labels ? Math.max(widths[j], 18) : widths[j];
+        return v.label ? Math.max(w, 14, Math.min(30, Math.ceil(v.label.length / 2.5))) : w;
+      }) : widths;
+      /* the header row grows to show long question texts (up to five lines) */
+      var lines = 1;
+      if (asLabels) vs.forEach(function (v, j) { if (v.label) lines = Math.max(lines, Math.min(5, Math.ceil(v.label.length * 1.1 / lw[j]))); });
+      sheets.push({ name: name, sh: sheetXml(rows, sst, { header: true, widths: lw, freeze: { x: o.idIndex >= 0 ? 1 : 0, y: 1 }, filter: true, tabSelected: !sheets.length,
+        headerHeight: lines > 1 ? lines * 15 + 3 : 0 }) });
     };
     if (o.sheets.codes) dataSheet(false, o.names.codes);
     if (o.sheets.labels) dataSheet(true, o.names.labels);
