@@ -831,7 +831,7 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
 
 <div class="bar">
   <h1 id="appTitle">SPSS Crosstabs</h1>
-  <span class="ver">version 6.1</span>
+  <span class="ver">version 6.1.1</span>
   <div class="seg viewsw" id="viewSw" role="group" style="display:none">
     <button type="button" id="viewTables" aria-pressed="true" data-i18n="view.tables"></button>
     <button type="button" id="railData" aria-pressed="false"><span class="lbl"></span></button>
@@ -9292,14 +9292,32 @@ function paintDirty(on){
 function markClean(){ if (state.data){ cfgBase = cfgSig(); paintDirty(false); } }
 function checkDirty(cfg){ if (!state.data || cfgBase === null) return; paintDirty(cfgSig(cfg) !== cfgBase); }
 setInterval(function(){ if (state.data && state.dataLog && state.dataLog.length !== checkDirty.n){ checkDirty.n = state.dataLog.length; checkDirty(); } }, 1500);
+/* the browser keeps the settings of each dataset apart: a file is known by its name, size and variable names,
+   so another file always opens with the standard settings */
+var CFG_PREFIX = 'spss-ctab-config:', CFG_INDEX = 'spss-ctab-configs', CFG_KEEP = 8;
+function cfgKey(){
+  var d = state.data; if (!d) return null;
+  var names = d.variables.map(function(v){ return v.name; }).join(','), h = 5381;
+  for (var i = 0; i < names.length; i++) h = ((h << 5) + h + names.charCodeAt(i)) | 0;
+  return CFG_PREFIX + (state.fileName || '') + ':' + d.header.nCases + ':' + d.variables.length + ':' + (h >>> 0).toString(36);
+}
+function storeCfg(key, text){
+  localStorage.setItem(key, text);
+  var idx = [];
+  try{ idx = JSON.parse(localStorage.getItem(CFG_INDEX) || '[]'); }catch(e){}
+  idx = [key].concat(idx.filter(function(k){ return k !== key; }));
+  idx.slice(CFG_KEEP).forEach(function(k){ try{ localStorage.removeItem(k); }catch(e){} });
+  localStorage.setItem(CFG_INDEX, JSON.stringify(idx.slice(0, CFG_KEEP)));
+}
 function saveConfig(){
-  var cfg = currentConfig();
+  var cfg = currentConfig(), key = cfgKey();
   checkDirty(cfg);
-  try{ localStorage.setItem('spss-ctab-config', JSON.stringify(cfg)); return; }catch(e){}
+  if (!key) return;
+  try{ storeCfg(key, JSON.stringify(cfg)); return; }catch(e){}
   try{
     var lean = JSON.parse(JSON.stringify(cfg));
     if (lean.report) lean.report.logos = [];
-    localStorage.setItem('spss-ctab-config', JSON.stringify(lean));
+    storeCfg(key, JSON.stringify(lean));
     if (!cfgWarned){ cfgWarned = true; toast(L('cfg.quotaLogos')); }
   }catch(e2){
     if (!cfgWarned){ cfgWarned = true; toast(L('cfg.quota')); }
@@ -9379,8 +9397,21 @@ function applyConfigObject(cfg){
   return { rows: Object.keys(state.rows).filter(function(k){ return state.rows[k]; }).length, missing: missing };
 }
 function loadConfig(){
-  try{ var raw = localStorage.getItem('spss-ctab-config'); return raw ? JSON.parse(raw) : null; }
+  var key = cfgKey(); if (!key) return null;
+  try{ var raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : null; }
   catch(e){ return null; }
+}
+/* the standard settings: what a new file opens with */
+var UI_DEFAULTS = null;
+function defaultReport(){ return { title:'', info:'', lang:'', palette:'classic', logos:[], useHeads:true, useNotes:true }; }
+function resetProject(){
+  if (UI_DEFAULTS) applyUi(UI_DEFAULTS);
+  state.report = defaultReport();
+  state.heads = {}; state.notes = {}; state.catOrder = {}; state.catHide = {}; state.catExcl = {};
+  state.sortOverride = {}; state.measureOrder = ['pct','n','wn']; state.techList = TECH_DEFAULT[lang].slice();
+  state.structMode = false; state.renderLimit = 12; state.tocQuery = '';
+  $('bookTitle').value = '';
+  renderMeasureOrder(); renderTechChips();
 }
 function applyUi(u){
   try{
@@ -9455,6 +9486,7 @@ function afterLoad(){
   });
   state.weightName = d.weightVariable || '';
 
+  resetProject();
   var cfg = loadConfig();
   if (cfg && cfg.ui) applyUi(cfg.ui);
   if (cfg && cfg.weight && findVar(cfg.weight)) state.weightName = cfg.weight;
@@ -13610,9 +13642,9 @@ try{
   if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
 }catch(e){}
 
-var startCfg = loadConfig();
-if (startCfg && Array.isArray(startCfg.techList) && startCfg.techList.length) state.techList = startCfg.techList.slice();
-else state.techList = TECH_DEFAULT[lang].slice();
+state.techList = TECH_DEFAULT[lang].slice();
+/* settings kept by older versions under one name for every file: they cannot tell which file they belong to */
+try{ localStorage.removeItem('spss-ctab-config'); }catch(e){}
 buildTabs();
 initDataRail();
 syncDataI18n();
@@ -13623,6 +13655,7 @@ syncDeps();
 renderMeasureOrder();
 applyI18n();
 renderTechChips();
+try{ UI_DEFAULTS = JSON.parse(JSON.stringify(currentConfig().ui)); }catch(e){}
 })();
 </script>
 </body>
