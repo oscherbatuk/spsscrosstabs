@@ -831,7 +831,7 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
 
 <div class="bar">
   <h1 id="appTitle">SPSS Crosstabs</h1>
-  <span class="ver">version 6.1.2</span>
+  <span class="ver">version 6.1.3</span>
   <div class="seg viewsw" id="viewSw" role="group" style="display:none">
     <button type="button" id="viewTables" aria-pressed="true" data-i18n="view.tables"></button>
     <button type="button" id="railData" aria-pressed="false"><span class="lbl"></span></button>
@@ -6467,7 +6467,8 @@ boot();
         if (!kv) return;
         var eq = kv.indexOf('=');
         if (eq < 0) return;
-        var nm = trimRight(kv.slice(0, eq)).toUpperCase();
+        /* entries are separated by NUL and, in files from some programs, a tab as well */
+        var nm = kv.slice(0, eq).replace(/^[\s\u0000]+|[\s\u0000]+$/g, '').toUpperCase();
         var len = parseInt(kv.slice(eq + 1), 10);
         if (len > 0) vlsMap[nm] = len;
       });
@@ -13246,10 +13247,16 @@ function openRaw(v){
 }
 function openStats(v){
   var raw = openRaw(v), seen = Object.create(null), d = 0, len = 0;
-  raw.forEach(function(r){ var k = OpenView.norm(r.t); if (!seen[k]){ seen[k] = 1; d++; } len += r.t.length; });
-  return { answered: raw.length, distinct: d, avgLen: raw.length ? len / raw.length : 0 };
+  var numLike = 0;
+  raw.forEach(function(r){
+    var k = OpenView.norm(r.t); if (!seen[k]){ seen[k] = 1; d++; } len += r.t.length;
+    if (/^[\d\s.,:;\/\-+TZ()]+$/i.test(r.t)) numLike++;
+  });
+  return { answered: raw.length, distinct: d, avgLen: raw.length ? len / raw.length : 0, numLike: numLike };
 }
 var OPEN_TECH = /(^|[_\W])(id|uid|guid|phone|tel|telephone|mobile|email|e_?mail|intv|interviewer|int_?name|operator|oper|supervisor|address|addr|gps|lat|lng|lon|device|ip)($|[_\W\d])/i;
+/* survey software fields: times, dates, durations (sys_StartTime, start_date, duration…) */
+var OPEN_TECH_SYS = /^sys_|^_|time$|date$|^start|^end|elapsed|duration|timestamp|^gps|latitude|longitude/i;
 var OPEN_TECH_LBL = /інтерв.?юер|оператор|телефон|e-?mail|адрес|супервайзер|координат|interviewer|operator|phone number|address/i;
 var OPEN_OTHER = /(^|[_\W\d])(other|oth|inshe|specify|spec)($|[_\W\d])|інше|вкажіть|уточніть|specify|other/i;
 var OPEN_SUFFIX = /(?:[._\-]?(?:others|other|oth|inshe|insh|txt|text|open|opn|specify|spec)|[._\-](?:t|o|s)|(?<=\d)(?:t|o|s))$/i;
@@ -13274,10 +13281,12 @@ function openParentAuto(v){
 }
 function openKindAuto(v){
   if (v.type !== 'string' || v.__mod) return null;
-  if (v.name === state.idName || OPEN_TECH.test(v.name) || OPEN_TECH_LBL.test(v.label || '')) return 'tech';
+  if (v.name === state.idName || OPEN_TECH.test(v.name) || OPEN_TECH_SYS.test(v.name) || OPEN_TECH_LBL.test(v.label || '')) return 'tech';
   if (openParentAuto(v) || OPEN_OTHER.test(v.name) || OPEN_OTHER.test(v.label || '')) return 'open';
   var s = openStats(v);
   if (!s.answered) return 'table';
+  /* numbers, dates and times written as text are not answers to read */
+  if (s.numLike >= 0.9 * s.answered) return 'tech';
   if (s.distinct > 30 || (s.distinct >= 8 && s.distinct / s.answered >= 0.5) || (s.avgLen >= 25 && s.distinct >= 5)) return 'open';
   return 'table';
 }
@@ -13373,7 +13382,8 @@ function textVars(){ return state.vars.filter(function(v){ return v.type === 'st
 function findOpens(){
   var n = 0, added = 0;
   textVars().forEach(function(v){
-    if (openKind(v) !== 'open') return;
+    /* a question nobody answered (no “Other” given) is not added */
+    if (openKind(v) !== 'open' || !openRaw(v).length) return;
     n++;
     if (!state.rows[v.name]){ setRow(v.name, true); added++; }
   });
