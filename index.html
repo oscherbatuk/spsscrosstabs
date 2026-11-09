@@ -699,6 +699,9 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
 .dg .c.num{text-align:right}
 .dg .c.selrow{background:color-mix(in srgb, var(--accent) 6%, var(--surface))}
 .dg .c.sel{outline:2px solid var(--accent); outline-offset:-2px; z-index:1; background:var(--surface)}
+.dg .c.rng{background:color-mix(in srgb, var(--accent) 16%, var(--surface))}
+.dg .c.rng.sel{background:var(--surface)}
+.dg .c.rng.fz{background:color-mix(in srgb, var(--accent) 16%, var(--surface-2))}
 .dg .c.der{color:var(--ink-2); background:color-mix(in srgb, var(--surface-2) 55%, var(--surface))}
 .dg .c.umis{color:var(--muted); font-style:italic}
 .dg .c.del{color:var(--muted); text-decoration:line-through; background:color-mix(in srgb, #B42318 5%, var(--surface))}
@@ -831,7 +834,7 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
 
 <div class="bar">
   <h1 id="appTitle">SPSS Crosstabs</h1>
-  <span class="ver">version 6.1.3</span>
+  <span class="ver">version 6.2</span>
   <div class="seg viewsw" id="viewSw" role="group" style="display:none">
     <button type="button" id="viewTables" aria-pressed="true" data-i18n="view.tables"></button>
     <button type="button" id="railData" aria-pressed="false"><span class="lbl"></span></button>
@@ -1358,7 +1361,7 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
     var t = cfg.t || {};
     var G = {
       cfg: cfg, mode: cfg.mode || 'label', idKey: cfg.idKey || null, colQuery: '', showDeleted: true,
-      filters: {}, sort: null, widths: {}, rows: [], cols: [], frozen: [], sel: { r: 0, c: 0 }, editor: null, pop: null
+      filters: {}, sort: null, widths: {}, rows: [], cols: [], frozen: [], sel: { r: 0, c: 0 }, anc: { r: 0, c: 0 }, editor: null, pop: null
     };
     host.innerHTML = '';
     host.classList.add('dgwrap');
@@ -1467,6 +1470,7 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
       if (!keepScroll) { sc.scrollTop = 0; }
       if (G.sel.r >= G.rows.length) G.sel.r = Math.max(0, G.rows.length - 1);
       if (G.sel.c >= G.cols.length + G.frozen.length - 1) G.sel.c = 0;
+      G.anc.r = G.sel.r; G.anc.c = G.sel.c;
       paint(); stats();
     }
 
@@ -1489,16 +1493,17 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
         vis.push({ c: cc, idx: k + G.frozen.length - 1 });
       }
       var html = [], fz = [], hs = [], hc = [], fw = G.frozenW;
-      var editable = !!cfg.editable;
+      var editable = !!cfg.editable, R = rng(), multi = R.r0 !== R.r1 || R.c0 !== R.c1;
+      var inR = function (r, c) { return multi && r >= R.r0 && r <= R.r1 && c >= R.c0 && c <= R.c1; };
       /* body cells (scrolling columns) */
       for (var r = r0; r < r1; r++) {
         var i = G.rows[r], y = r * ROW_H, del = cfg.isDeleted && cfg.isDeleted(i);
-        var rowCls = (del ? ' del' : '') + (r === G.sel.r ? ' selrow' : '');
+        var rowCls = (del ? ' del' : '') + ((multi ? r >= R.r0 && r <= R.r1 : r === G.sel.r) ? ' selrow' : '');
         for (var q = 0; q < vis.length; q++) {
           var vc = vis[q].c, col = vc.col, v = col.data[i];
           var cls = 'c' + rowCls + (typeof v === 'number' && (G.mode === 'code' || col.dateKind) ? ' num' : '') +
             (col.derived ? ' der' : '') + (cfg.isMissing && !isEmpty(v) && cfg.isMissing(col, v) ? ' umis' : '') +
-            (r === G.sel.r && vis[q].idx === G.sel.c ? ' sel' : '');
+            (inR(r, vis[q].idx) ? ' rng' : '') + (r === G.sel.r && vis[q].idx === G.sel.c ? ' sel' : '');
           html.push('<div class="' + cls + '" data-r="' + r + '" data-c="' + vis[q].idx + '" style="left:' + (vc.x - fw) + 'px;top:' + y + 'px;width:' + vc.w + 'px">' +
                     esc(display(col, v)) + '</div>');
         }
@@ -1509,14 +1514,14 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
           '</div>');
         if (G.frozen[1]) {
           var f1 = G.frozen[1], vid = f1.col.data[i];
-          fz.push('<div class="c fz idc' + rowCls + (r === G.sel.r && G.sel.c === 0 ? ' sel' : '') + '" data-r="' + r + '" data-c="0" style="left:' + f1.x + 'px;top:' + y + 'px;width:' + f1.w + 'px">' +
+          fz.push('<div class="c fz idc' + rowCls + (inR(r, 0) ? ' rng' : '') + (r === G.sel.r && G.sel.c === 0 ? ' sel' : '') + '" data-r="' + r + '" data-c="0" style="left:' + f1.x + 'px;top:' + y + 'px;width:' + f1.w + 'px">' +
                     esc(display(f1.col, vid)) + '</div>');
         }
       }
       /* header */
       var hdr = function (c, x, idx, frozenHead) {
         var col = c.col, f = G.filters[col.key], s = G.sort && G.sort.key === col.key ? (G.sort.dir > 0 ? ' ↑' : ' ↓') : '';
-        return '<div class="h' + (frozenHead ? ' fz' : '') + (col.derived ? ' der' : '') + (idx === G.sel.c ? ' selh' : '') + '" data-hc="' + idx + '" style="left:' + x + 'px;top:0;width:' + c.w + 'px">' +
+        return '<div class="h' + (frozenHead ? ' fz' : '') + (col.derived ? ' der' : '') + ((multi ? idx >= R.c0 && idx <= R.c1 : idx === G.sel.c) ? ' selh' : '') + '" data-hc="' + idx + '" style="left:' + x + 'px;top:0;width:' + c.w + 'px">' +
           '<div class="hn">' + esc(col.name) + s + (col.readonly && editable ? ' <span class="ro" title="' + esc(t.readonly || '') + '">🔒</span>' : '') + '</div>' +
           '<div class="hl" title="' + esc(col.label || '') + '">' + esc(col.label || '') + '</div>' +
           '<button type="button" class="hf' + (f ? ' on' : '') + '" data-f="' + esc(col.key) + '" title="' + esc(t.filter || 'Filter') + '">▾</button>' +
@@ -1549,36 +1554,82 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
         else if (rc.x + rc.w > sc.scrollLeft + sc.clientWidth) sc.scrollLeft = rc.x + rc.w - sc.clientWidth;
       }
     }
-    function select(r, c, noScroll) {
+    /* the selected range: from the anchor (where the selection started) to the active cell */
+    function rng() {
+      return { r0: Math.min(G.anc.r, G.sel.r), r1: Math.max(G.anc.r, G.sel.r), c0: Math.min(G.anc.c, G.sel.c), c1: Math.max(G.anc.c, G.sel.c) };
+    }
+    function select(r, c, noScroll, extend) {
       var nc = allCols().length;
       G.sel.r = Math.max(0, Math.min(G.rows.length - 1, r));
       G.sel.c = Math.max(0, Math.min(nc - 1, c));
+      if (!extend) { G.anc.r = G.sel.r; G.anc.c = G.sel.c; }
       if (!noScroll) ensureVisible();
       paint();
       if (cfg.onSelect) cfg.onSelect(G.rows[G.sel.r], allCols()[G.sel.c]);
     }
+    /* dragging over the cells (or the row numbers, or the column heads) selects a range */
+    function dragSelect(kind) {
+      var last = allCols().length - 1, lastR = G.rows.length - 1, tick = 0, lastEv = null;
+      var at = function (ev) {
+        var el = document.elementFromPoint(ev.clientX, ev.clientY);
+        var cell = el && el.closest ? el.closest('[data-r],[data-hc]') : null;
+        if (!cell || !layer.contains(cell)) return;
+        if (kind === 'cell' && cell.hasAttribute('data-c')) select(+cell.getAttribute('data-r'), +cell.getAttribute('data-c'), true, true);
+        else if (kind === 'row' && cell.hasAttribute('data-r')) { G.sel.c = last; select(+cell.getAttribute('data-r'), last, true, true); }
+        else if (kind === 'col' && cell.hasAttribute('data-hc')) select(lastR, +cell.getAttribute('data-hc'), true, true);
+      };
+      var edge = function () {
+        if (!lastEv) return;
+        var b = sc.getBoundingClientRect(), dy = 0, dx = 0;
+        if (lastEv.clientY < b.top + HEAD_H + 10) dy = -ROW_H; else if (lastEv.clientY > b.bottom - 10) dy = ROW_H;
+        if (lastEv.clientX > b.right - 10) dx = 40; else if (lastEv.clientX < b.left + G.frozenW + 10) dx = -40;
+        if (dy && kind !== 'col') sc.scrollTop += dy;
+        if (dx && kind !== 'row') sc.scrollLeft += dx;
+        if (dx || dy) at(lastEv);
+      };
+      var mv = function (ev) { lastEv = ev; at(ev); };
+      var up = function () { document.removeEventListener('mousemove', mv); document.removeEventListener('mouseup', up); clearInterval(tick); };
+      document.addEventListener('mousemove', mv); document.addEventListener('mouseup', up);
+      tick = setInterval(edge, 60);
+    }
     layer.addEventListener('mousedown', function (e) {
       var tg = e.target;
-      if (tg.closest('.rdel') || tg.closest('.hf') || tg.closest('.rz')) return;
+      if (e.button !== 0 || tg.closest('.rdel') || tg.closest('.hf') || tg.closest('.rz')) return;
       var cell = tg.closest('[data-r]');
       if (cell && cell.hasAttribute('data-c')) {
         if (G.editor) commitEdit(false);
         var rr = +cell.getAttribute('data-r'), cc = +cell.getAttribute('data-c');
-        var again = e.detail >= 2 && G.sel.r === rr && G.sel.c === cc;
-        select(rr, cc, true);
+        var again = e.detail >= 2 && G.sel.r === rr && G.sel.c === cc && G.anc.r === rr && G.anc.c === cc;
+        select(rr, cc, true, e.shiftKey);
         /* the cells are repainted on every click, so a double click is read from the click count */
         /* the clicked cell is repainted, so the browser would move focus to the page: keep it on the grid */
         e.preventDefault();
         if (again) { startEdit(''); return; }
         sc.focus({ preventScroll: true });
+        dragSelect('cell');
       } else if (cell && cell.hasAttribute('data-rn')) {
+        /* a row number selects the whole row; Shift or dragging adds the rows in between */
         if (G.editor) commitEdit(false);
         e.preventDefault();
-        select(+cell.getAttribute('data-r'), G.sel.c, true);
+        var rn = +cell.getAttribute('data-r'), lastC = allCols().length - 1;
+        if (!e.shiftKey) { G.anc.r = rn; }
+        G.anc.c = 0; G.sel.c = lastC;
+        select(rn, lastC, true, true);
         sc.focus({ preventScroll: true });
+        dragSelect('row');
       }
       var h = tg.closest('[data-hc]');
-      if (h && !cell) { if (G.editor) commitEdit(false); select(G.sel.r, +h.getAttribute('data-hc'), true); }
+      if (h && !cell) {
+        /* a column head selects the whole column */
+        if (G.editor) commitEdit(false);
+        e.preventDefault();
+        var hc = +h.getAttribute('data-hc');
+        if (!e.shiftKey) G.anc.c = hc;
+        G.anc.r = 0;
+        select(G.rows.length - 1, hc, true, true);
+        sc.focus({ preventScroll: true });
+        dragSelect('col');
+      }
     });
     layer.addEventListener('click', function (e) {
       var d = e.target.closest('.rdel');
@@ -1590,25 +1641,108 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
       if (G.editor) return;
       var r = G.sel.r, c = G.sel.c, page = Math.max(1, Math.floor((sc.clientHeight - HEAD_H) / ROW_H) - 1);
       var k = e.key;
-      if (k === 'ArrowDown') { select(r + 1, c); e.preventDefault(); }
-      else if (k === 'ArrowUp') { select(r - 1, c); e.preventDefault(); }
-      else if (k === 'ArrowRight' || (k === 'Tab' && !e.shiftKey)) { select(r, c + 1); e.preventDefault(); }
-      else if (k === 'ArrowLeft' || (k === 'Tab' && e.shiftKey)) { select(r, c - 1); e.preventDefault(); }
-      else if (k === 'PageDown') { select(r + page, c); e.preventDefault(); }
-      else if (k === 'PageUp') { select(r - page, c); e.preventDefault(); }
-      else if (k === 'Home') { select(e.ctrlKey ? 0 : r, 0); e.preventDefault(); }
-      else if (k === 'End') { select(e.ctrlKey ? G.rows.length - 1 : r, allCols().length - 1); e.preventDefault(); }
-      else if (k === 'Enter' || k === 'F2') { startEdit(''); e.preventDefault(); }
-      else if ((k === 'Delete' || k === 'Backspace') && cfg.editable) { setValue(''); e.preventDefault(); }
-      else if ((e.ctrlKey || e.metaKey) && (k === 'c' || k === 'C' || k === 'с' || k === 'С')) { copyCell(); e.preventDefault(); }
-      else if (k.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && cfg.editable) { startEdit(k); e.preventDefault(); }
+      var x = e.shiftKey, ctl = e.ctrlKey || e.metaKey;
+      if (k === 'ArrowDown') { select(ctl ? G.rows.length - 1 : r + 1, c, false, x); e.preventDefault(); }
+      else if (k === 'ArrowUp') { select(ctl ? 0 : r - 1, c, false, x); e.preventDefault(); }
+      else if (k === 'ArrowRight') { select(r, ctl ? allCols().length - 1 : c + 1, false, x); e.preventDefault(); }
+      else if (k === 'ArrowLeft') { select(r, ctl ? 0 : c - 1, false, x); e.preventDefault(); }
+      else if (k === 'Tab') { select(r, c + (x ? -1 : 1)); e.preventDefault(); }
+      else if (k === 'PageDown') { select(r + page, c, false, x); e.preventDefault(); }
+      else if (k === 'PageUp') { select(r - page, c, false, x); e.preventDefault(); }
+      else if (k === 'Home') { select(ctl ? 0 : r, 0, false, x); e.preventDefault(); }
+      else if (k === 'End') { select(ctl ? G.rows.length - 1 : r, allCols().length - 1, false, x); e.preventDefault(); }
+      else if (k === 'Escape' && (G.anc.r !== r || G.anc.c !== c)) { select(r, c, true); e.preventDefault(); }
+      else if (k === 'Enter' || k === 'F2') { select(r, c, true); startEdit(''); e.preventDefault(); }
+      else if ((k === 'Delete' || k === 'Backspace') && cfg.editable) { clearRange(); e.preventDefault(); }
+      else if (ctl && (k === 'a' || k === 'A' || k === 'ф' || k === 'Ф')) { G.anc.r = 0; G.anc.c = 0; select(G.rows.length - 1, allCols().length - 1, true, true); e.preventDefault(); }
+      else if (ctl && (k === 'c' || k === 'C' || k === 'с' || k === 'С' || k === 'x' || k === 'X' || k === 'ч' || k === 'Ч' || k === 'v' || k === 'V' || k === 'м' || k === 'М')) { /* the copy, cut and paste events do the work */ }
+      else if (k.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && cfg.editable) { select(r, c, true); startEdit(k); e.preventDefault(); }
     });
-    function copyCell() {
-      var ac = allCols()[G.sel.c], i = G.rows[G.sel.r]; if (!ac || i === undefined) return;
-      var s = display(ac.col, ac.col.data[i]);
-      try { navigator.clipboard.writeText(s); } catch (x) { /* clipboard unavailable */ }
-      if (cfg.onToast) cfg.onToast((t.copied || 'Copied') + ': ' + s);
+    /* ---- copy, cut and paste a range, tab-separated like Excel ---- */
+    var MAX_COPY = 2000000;
+    function rangeText(R) {
+      var ac = allCols(), out = [];
+      for (var r = R.r0; r <= R.r1; r++) {
+        var i = G.rows[r], line = [];
+        for (var c = R.c0; c <= R.c1; c++) {
+          var col = ac[c] && ac[c].col;
+          line.push(col ? String(display(col, col.data[i])).replace(/[\t\r\n]+/g, ' ') : '');
+        }
+        out.push(line.join('\t'));
+      }
+      return out.join('\r\n');
     }
+    function copyRange(e) {
+      var R = rng(), n = (R.r1 - R.r0 + 1) * (R.c1 - R.c0 + 1);
+      if (!G.rows.length) return false;
+      if (n > MAX_COPY) { if (cfg.onToast) cfg.onToast(t.tooBig || 'Too many cells: select a smaller range'); return false; }
+      var s = rangeText(R);
+      if (e && e.clipboardData) e.clipboardData.setData('text/plain', s);
+      else { try { navigator.clipboard.writeText(s); } catch (x) { /* clipboard unavailable */ } }
+      if (cfg.onToast) cfg.onToast(n === 1 ? (t.copied || 'Copied') + ': ' + s : (t.copiedN || 'Copied cells: {n}').replace('{n}', n.toLocaleString('uk-UA')));
+      return true;
+    }
+    function copyCell() { copyRange(null); }
+    /* many cells change as one step (one undo) when the host can group them */
+    function batch(fn) { if (cfg.onBatch) cfg.onBatch(fn); else fn(); }
+    function editAt(r, c, raw, tally) {
+      var ac = allCols()[c], i = G.rows[r];
+      if (i === undefined || !ac) return;
+      if (!canEdit(ac)) { tally.ro++; return; }
+      var p = parseInput(ac.col, raw);
+      if (p.err) { tally.bad++; return; }
+      var res = cfg.onEdit(i, ac.col, p.v);
+      if (res === true) tally.ok++; else tally.bad++;
+    }
+    function report(tally, key) {
+      if (!cfg.onToast) return;
+      var msg = (t[key] || (key === 'cleared' ? 'Cleared: {n}' : 'Pasted: {n}')).replace('{n}', tally.ok.toLocaleString('uk-UA'));
+      if (tally.ro || tally.bad) msg += '; ' + (t.skipped || 'skipped: {m}').replace('{m}', (tally.ro + tally.bad).toLocaleString('uk-UA'));
+      cfg.onToast(msg);
+    }
+    function clearRange() {
+      var R = rng();
+      if (R.r0 === R.r1 && R.c0 === R.c1) { var res = setValue(''); if (typeof res === 'string' && cfg.onToast) cfg.onToast(res); return; }
+      var tally = { ok: 0, ro: 0, bad: 0 };
+      batch(function () { for (var r = R.r0; r <= R.r1; r++) for (var c = R.c0; c <= R.c1; c++) editAt(r, c, '', tally); });
+      paint(); report(tally, 'cleared');
+    }
+    function pasteText(text) {
+      text = String(text).replace(/\r\n?/g, '\n');
+      if (text.slice(-1) === '\n') text = text.slice(0, -1);
+      var grid = text.split('\n').map(function (l) { return l.split('\t'); });
+      var R = rng(), one = grid.length === 1 && grid[0].length === 1;
+      var lastR = G.rows.length - 1, lastC = allCols().length - 1;
+      /* one value into a range fills the range; otherwise the block goes from the top left cell */
+      var r1 = one ? R.r1 : Math.min(lastR, R.r0 + grid.length - 1);
+      var c1 = one ? R.c1 : Math.min(lastC, R.c0 + Math.max.apply(null, grid.map(function (l) { return l.length; })) - 1);
+      if (one && R.r0 === R.r1 && R.c0 === R.c1) {
+        var res = setValue(grid[0][0]);
+        if (typeof res === 'string' && cfg.onToast) cfg.onToast(res);
+        return;
+      }
+      var tally = { ok: 0, ro: 0, bad: 0 };
+      batch(function () {
+        for (var r = R.r0; r <= r1; r++) for (var c = R.c0; c <= c1; c++) {
+          var row = grid[one ? 0 : r - R.r0], v = row ? row[one ? 0 : c - R.c0] : undefined;
+          if (v === undefined) continue;
+          editAt(r, c, v, tally);
+        }
+      });
+      G.anc.r = R.r0; G.anc.c = R.c0; G.sel.r = r1; G.sel.c = c1;
+      paint(); report(tally, 'pasted');
+    }
+    sc.addEventListener('copy', function (e) { if (G.editor) return; if (copyRange(e)) e.preventDefault(); });
+    sc.addEventListener('cut', function (e) {
+      if (G.editor) return;
+      if (copyRange(e)) { e.preventDefault(); if (cfg.editable) clearRange(); }
+    });
+    sc.addEventListener('paste', function (e) {
+      if (G.editor || !cfg.editable) return;
+      var s = e.clipboardData && e.clipboardData.getData('text/plain');
+      e.preventDefault();
+      if (s !== undefined && s !== null && s !== '') pasteText(s);
+    });
 
     /* ---- editing ---- */
     function canEdit(ac) { return cfg.editable && ac && !ac.col.readonly; }
@@ -1863,7 +1997,7 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
         relayout(true);
         var r = v.selCase !== undefined ? G.rows.indexOf(v.selCase) : -1;
         var c = v.selKey ? allCols().map(function (x) { return x.key; }).indexOf(v.selKey) : -1;
-        G.sel.r = r >= 0 ? r : 0; G.sel.c = c >= 0 ? c : 0;
+        G.sel.r = r >= 0 ? r : 0; G.sel.c = c >= 0 ? c : 0; G.anc.r = G.sel.r; G.anc.c = G.sel.c;
         sc.scrollTop = v.st || 0; sc.scrollLeft = v.sl || 0;
         paint(); stats();
       },
@@ -2701,6 +2835,9 @@ table.ct tbody tr:hover td.tot{background:#D9E6F2}
 .dg .c.num{text-align:right}
 .dg .c.selrow{background:color-mix(in srgb, var(--accent) 6%, var(--surface))}
 .dg .c.sel{outline:2px solid var(--accent); outline-offset:-2px; z-index:1; background:var(--surface)}
+.dg .c.rng{background:color-mix(in srgb, var(--accent) 16%, var(--surface))}
+.dg .c.rng.sel{background:var(--surface)}
+.dg .c.rng.fz{background:color-mix(in srgb, var(--accent) 16%, var(--surface-2))}
 .dg .c.der{color:var(--ink-2); background:color-mix(in srgb, var(--surface-2) 55%, var(--surface))}
 .dg .c.umis{color:var(--muted); font-style:italic}
 .dg .c.del{color:var(--muted); text-decoration:line-through; background:color-mix(in srgb, #B42318 5%, var(--surface))}
@@ -2964,7 +3101,7 @@ var I = {
     dhLabels:'Мітки значень', dhMissing:'Пропущені значення', dhNote:'Примітка', dNum:'числова', dDate:'дата', dTime:'час', dStr:'текстова ({w})', dMod:'Модифікована змінна (джерело: {s})',
     g_filter:'Фільтр і сортування', g_sortAsc:'Сортувати ↑', g_sortDesc:'Сортувати ↓', g_findValue:'Знайти значення', g_contains:'Містить…',
     g_selectAll:'(Виділити все)', g_clearFilter:'Скинути', g_cancel:'Скасувати', g_tooMany:'Показано перші {n} значень — уточніть пошук',
-    g_noRows:'Жодна анкета не відповідає фільтрам.', g_copied:'Скопійовано', g_empty:'(порожньо)',
+    g_noRows:'Жодна анкета не відповідає фільтрам.', g_copied:'Скопійовано', g_empty:'(порожньо)', g_copiedN:'Скопійовано комірок: {n}', g_tooBig:'Забагато комірок — виділіть менший діапазон',
     wBtn:'↓ Word', wCharts:'Діаграми у Word', wNative:'Редаговані діаграми Word', wNativeHint:'можна змінювати кольори, підписи й дані («Змінити дані» відкриває Excel)',
     wImage:'Зображення', wImageHint:'точно як на екрані, але без редагування', wHeader:'Додати шапку звіту: назва, опис і логотипи',
     wSave:'Зберегти Word', wBuilding:'Готую Word…', wPart:'частина {k} з {n}'
@@ -3038,7 +3175,7 @@ var I = {
     dhLabels:'Value labels', dhMissing:'Missing values', dhNote:'Note', dNum:'numeric', dDate:'date', dTime:'time', dStr:'string ({w})', dMod:'Modified variable (source: {s})',
     g_filter:'Filter and sort', g_sortAsc:'Sort ↑', g_sortDesc:'Sort ↓', g_findValue:'Find a value', g_contains:'Contains…',
     g_selectAll:'(Select all)', g_clearFilter:'Clear', g_cancel:'Cancel', g_tooMany:'The first {n} values are shown — refine the search',
-    g_noRows:'No cases match the filters.', g_copied:'Copied', g_empty:'(empty)',
+    g_noRows:'No cases match the filters.', g_copied:'Copied', g_empty:'(empty)', g_copiedN:'Cells copied: {n}', g_tooBig:'Too many cells — select a smaller range',
     wBtn:'↓ Word', wCharts:'Charts in Word', wNative:'Editable Word charts', wNativeHint:'colours, labels and data can be changed (“Edit data” opens Excel)',
     wImage:'Pictures', wImageHint:'exactly as on screen, but not editable', wHeader:'Add the report header: title, description and logos',
     wSave:'Save Word', wBuilding:'Preparing Word…', wPart:'part {k} of {n}'
@@ -5287,7 +5424,7 @@ function renderDataTab(){
   if (RD.built) { if (RD.grid) RD.grid.relayout(); return; }
   RD.built = true;
   var t = {};
-  ['filter','sortAsc','sortDesc','findValue','contains','selectAll','clearFilter','cancel','tooMany','noRows','copied','empty'].forEach(function(k){
+  ['filter','sortAsc','sortDesc','findValue','contains','selectAll','clearFilter','cancel','tooMany','noRows','copied','empty','copiedN','tooBig'].forEach(function(k){
     t[k] = tx['g_' + k];
   });
   t.gridLabel = tx.dataTab;
@@ -12504,14 +12641,16 @@ var DTX = {
     rail:'Масив', title:'Масив', find:'Знайти змінну: назва або текст питання', code:'Коди', label:'Мітки', both:'Код + мітка',
     id:'ID:', noId:'— без ID —', mods:'Mod-змінні', showDel:'Показувати вилучені', shown:'Показано {n} з {m} анкет · змінних: {c}',
     deleted:' · вилучено: {d}', clearF:'Скинути фільтри', undo:'↶ Скасувати', log:'Журнал змін', sav:'↓ .sav', xlsx:'↓ Excel',
-    hint:'Подвійний клік, Enter або просто почніть друкувати — змінити значення. Delete — очистити. ▾ у заголовку — фільтр і сортування як в Excel. × біля номера рядка — вилучити анкету.',
+    hint:'Подвійний клік, Enter або просто почніть друкувати — змінити значення. Протягніть мишею або Shift + стрілки — виділити діапазон; Ctrl+C / Ctrl+V — копіювати й вставити як в Excel, Delete — очистити. ▾ у заголовку — фільтр і сортування. × біля номера рядка — вилучити анкету.',
     logEmpty:'Змін ще немає. Тут з’являтиметься кожна правка: ID → змінна → було → стало.',
     logDel:'Анкету вилучено', logRestore:'Анкету відновлено', undoOne:'Скасувати цю зміну', empty:'(порожньо)', row:'рядок',
     undone:'Зміну скасовано', nothing:'Немає що скасовувати', readonly:'Mod-змінна рахується автоматично: змініть вихідну змінну',
     badNumber:'Введіть число або виберіть мітку зі списку', noLabel:'Мітки не знайдено: буде записано введений код',
     filter:'Фільтр і сортування', sortAsc:'Сортувати ↑', sortDesc:'Сортувати ↓', findValue:'Знайти значення', contains:'Містить…',
     selectAll:'(Виділити все)', clearFilter:'Скинути', cancel:'Скасувати', tooMany:'Показано перші {n} значень — уточніть пошук',
-    noRows:'Жодна анкета не відповідає фільтрам.', copied:'Скопійовано', del:'Вилучити анкету', restore:'Відновити анкету',
+    noRows:'Жодна анкета не відповідає фільтрам.', copied:'Скопійовано', del:'Вилучити анкету',
+    copiedN:'Скопійовано комірок: {n}', tooBig:'Забагато комірок — виділіть менший діапазон', pasted:'Вставлено значень: {n}', cleared:'Очищено комірок: {n}',
+    skipped:'пропущено: {m} (не підходять або лише для читання)', undoneN:'Скасовано змін: {n}', codesNoLabel:'Деякі вставлені коди не мають міток у змінних ({n})', restore:'Відновити анкету',
     gridLabel:'Масив даних', editedTo:'Змінено', codeNoLabel:'Код {c} не має мітки в цій змінній',
     xTitle:'Зберегти масив в Excel', xSheets:'Аркуші з даними', xCodes:'Лише коди', xLabels:'Лише мітки', xBoth:'Обидва аркуші: коди і мітки',
     xDict:'Аркуш «Змінні» (словник: текст питання, мітки значень, пропущені значення)', xLog:'Аркуш «Журнал змін»',
@@ -12540,14 +12679,16 @@ var DTX = {
     rail:'Dataset', title:'Dataset', find:'Find a variable: name or question text', code:'Codes', label:'Labels', both:'Code + label',
     id:'ID:', noId:'— no ID —', mods:'Mod variables', showDel:'Show deleted', shown:'{n} of {m} cases shown · variables: {c}',
     deleted:' · deleted: {d}', clearF:'Clear filters', undo:'↶ Undo', log:'Change log', sav:'↓ .sav', xlsx:'↓ Excel',
-    hint:'Double-click, Enter or just start typing to change a value. Delete clears it. ▾ in a header filters and sorts, as in Excel. × next to a row number deletes the case.',
+    hint:'Double-click, Enter or just start typing to change a value. Drag or Shift + arrows to select a range; Ctrl+C / Ctrl+V copy and paste as in Excel, Delete clears. ▾ in a header filters and sorts. × next to a row number deletes the case.',
     logEmpty:'No changes yet. Every edit will appear here: ID → variable → old → new.',
     logDel:'Case deleted', logRestore:'Case restored', undoOne:'Undo this change', empty:'(empty)', row:'row',
     undone:'Change undone', nothing:'Nothing to undo', readonly:'A Mod variable is computed: change its source variable',
     badNumber:'Enter a number or pick a label from the list', noLabel:'No matching label — the typed code will be used',
     filter:'Filter and sort', sortAsc:'Sort ↑', sortDesc:'Sort ↓', findValue:'Find a value', contains:'Contains…',
     selectAll:'(Select all)', clearFilter:'Clear', cancel:'Cancel', tooMany:'The first {n} values are shown — refine the search',
-    noRows:'No cases match the filters.', copied:'Copied', del:'Delete the case', restore:'Restore the case',
+    noRows:'No cases match the filters.', copied:'Copied', del:'Delete the case',
+    copiedN:'Cells copied: {n}', tooBig:'Too many cells — select a smaller range', pasted:'Values pasted: {n}', cleared:'Cells cleared: {n}',
+    skipped:'skipped: {m} (not valid or read-only)', undoneN:'Changes undone: {n}', codesNoLabel:'Some pasted codes have no labels in their variables ({n})', restore:'Restore the case',
     gridLabel:'Dataset', editedTo:'Changed', codeNoLabel:'Code {c} has no label in this variable',
     xTitle:'Save the dataset to Excel', xSheets:'Data sheets', xCodes:'Codes only', xLabels:'Labels only', xBoth:'Both sheets: codes and labels',
     xDict:'“Variables” sheet (dictionary: question text, value labels, missing values)', xLog:'“Change log” sheet',
@@ -12656,15 +12797,45 @@ function afterDataChange(varName){
   renderDvLog(); updateDvButtons();
   scheduleCompute();
 }
+/* a paste or a cleared range changes many cells: one log group, one recount, one undo */
+var EDIT_BATCH = null;
+function editBatch(fn){
+  if (EDIT_BATCH){ fn(); return; }
+  EDIT_BATCH = { id: Date.now() + Math.random(), vars: {}, noLabel: 0 };
+  var b = EDIT_BATCH;
+  try { fn(); } finally {
+    EDIT_BATCH = null;
+    var names = Object.keys(b.vars);
+    if (names.length){
+      names.forEach(function(n, k){ if (k < names.length - 1) afterDataChangeVar(n); });
+      afterDataChange(names[names.length - 1]);
+    }
+    if (b.noLabel) setTimeout(function(){ toast(DT('codesNoLabel').replace('{n}', b.noLabel)); }, 1600);
+  }
+}
+/* the per-variable part of afterDataChange (weight, mod variables, ID column) without the recount */
+function afterDataChangeVar(varName){
+  if (varName === state.weightName) applyWeight();
+  state.vars.forEach(function(dv){
+    if (dv.__mod && dv.__src === varName){
+      var m = modById(dv.__mod), fresh = m ? materialize(m) : null;
+      if (fresh) for (var k = 0; k < fresh.data.length; k++) dv.data[k] = fresh.data[k];
+    }
+  });
+  if (varName === state.idName && DV.grid) DV.grid.relayout();
+}
 function editCell(i, col, value){
   var v = findVar(col.key); if (!v || v.__mod) return DT('readonly');
   var old = v.data[i];
   if (v.type === 'string' && typeof value === 'number') value = isNaN(value) ? '' : String(value);
   if (sameVal(old, value)) return true;
   v.data[i] = value;
-  state.dataLog.push({ k:'edit', i:i, v:v.name, old:old, nw:value, at:Date.now() });
-  if (v.type === 'numeric' && !T.isSysmis(value) && v.valueLabels && v.valueLabels.length && !labelOf(v, value))
-    toast(DT('codeNoLabel').replace('{c}', valText(v, value)));
+  var e = { k:'edit', i:i, v:v.name, old:old, nw:value, at:Date.now() };
+  if (EDIT_BATCH) e.g = EDIT_BATCH.id;
+  state.dataLog.push(e);
+  var noLab = v.type === 'numeric' && !T.isSysmis(value) && v.valueLabels && v.valueLabels.length && !labelOf(v, value);
+  if (EDIT_BATCH){ EDIT_BATCH.vars[v.name] = 1; if (noLab) EDIT_BATCH.noLabel++; return true; }
+  if (noLab) toast(DT('codeNoLabel').replace('{c}', valText(v, value)));
   afterDataChange(v.name);
   return true;
 }
@@ -12691,7 +12862,23 @@ function undoEntry(idx){
   }
   toast(DT('undone'));
 }
-function undoLast(){ if (!state.dataLog.length){ toast(DT('nothing')); return; } undoEntry(state.dataLog.length - 1); }
+function undoLast(){
+  var log = state.dataLog;
+  if (!log.length){ toast(DT('nothing')); return; }
+  var g = log[log.length - 1].g;
+  if (g === undefined){ undoEntry(log.length - 1); return; }
+  /* a pasted or cleared range is undone as a whole */
+  var names = {}, n = 0;
+  while (log.length && log[log.length - 1].g === g){
+    var e = log.pop(), v = findVar(e.v);
+    if (v){ v.data[e.i] = e.old; names[e.v] = 1; }
+    n++;
+  }
+  var list = Object.keys(names);
+  list.forEach(function(nm, k){ if (k < list.length - 1) afterDataChangeVar(nm); });
+  afterDataChange(list.length ? list[list.length - 1] : null);
+  toast(DT('undoneN').replace('{n}', n));
+}
 
 /* ---- the view ---- */
 var dataRailBtn = null;
@@ -12783,13 +12970,13 @@ function renderDataView(langOnly){
   var host = $('dvGrid');
   var strings = {};
   ['filter','sortAsc','sortDesc','findValue','contains','selectAll','clearFilter','cancel','tooMany','noRows','copied','del','restore',
-   'readonly','badNumber','noLabel','empty','gridLabel','badDate','badTime'].forEach(function(k){ strings[k] = DT(k); });
+   'readonly','badNumber','noLabel','empty','gridLabel','badDate','badTime','copiedN','tooBig','pasted','cleared','skipped'].forEach(function(k){ strings[k] = DT(k); });
   DV.grid = DataGrid.create(host, {
     n: state.data.header.nCases, cols: gridColumns(), idKey: state.idName || null, mode: DV.mode,
     editable: true, deletable: true, sep: '.',
     isDeleted: function(i){ return !!state.deleted[i]; },
     isMissing: function(col, x){ return !!col.missingRule && T.userMissing(col, x); },
-    onEdit: editCell, onToggleDelete: toggleDelete, onStats: function(s){ DV.stats = s; updateDvStats(); },
+    onEdit: editCell, onBatch: editBatch, onToggleDelete: toggleDelete, onStats: function(s){ DV.stats = s; updateDvStats(); },
     onToast: function(m){ toast(m); }, t: strings
   });
   if (DV.query) DV.grid.setColumnQuery(DV.query);
