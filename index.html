@@ -834,7 +834,7 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
 
 <div class="bar">
   <h1 id="appTitle">SPSS Crosstabs</h1>
-  <span class="ver">version 6.2</span>
+  <span class="ver">version 6.2.1</span>
   <div class="seg viewsw" id="viewSw" role="group" style="display:none">
     <button type="button" id="viewTables" aria-pressed="true" data-i18n="view.tables"></button>
     <button type="button" id="railData" aria-pressed="false"><span class="lbl"></span></button>
@@ -1659,7 +1659,7 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
       else if (k.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && cfg.editable) { select(r, c, true); startEdit(k); e.preventDefault(); }
     });
     /* ---- copy, cut and paste a range, tab-separated like Excel ---- */
-    var MAX_COPY = 2000000;
+    var MAX_COPY = 1000000;
     function rangeText(R) {
       var ac = allCols(), out = [];
       for (var r = R.r0; r <= R.r1; r++) {
@@ -2212,9 +2212,9 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
       .replace(/[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/g, function (m) {
         return m.charAt(0) + '•••@•••' + m.slice(m.lastIndexOf('.'));
       })
-      .replace(/\+?\d[\d\s\-().]{7,}\d/g, function (m) {
+      .replace(/(?<![\d+])(?:\+?\d{1,3}[\s\-]?)?(?:\(\d{2,4}\)|\d{2,4})[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}(?!\d)/g, function (m) {
         var total = m.replace(/\D/g, '').length, seen = 0;
-        if (total < 9) return m;
+        if (total < 9 || total > 13) return m;
         return m.replace(/\d/g, function (d) { seen++; return seen > total - 2 ? d : '•'; });
       });
   }
@@ -3336,7 +3336,7 @@ function makeTable(t, o, cfg){
       if (o.pctBase === 'row') pct = totW > 0 ? 100 * wn / totW : null;
       else if (o.pctBase === 'total') pct = bw[0] > 0 ? 100 * wn / bw[0] : null;
       else pct = bw[c] > 0 ? 100 * wn / bw[c] : null;
-      return { n:nn, wn:wn, pct:pct, sig:[], vsTotal:'' };
+      return { n:nn, wn:wn, pct:pct, cp: bw[c] > 0 ? wn / bw[c] : null, sig:[], vsTotal:'' };
     }) };
   });
   var eff = function(c){ return (!D.weighted || o.sigBase === 'unweighted') ? bn[c] : be[c]; };
@@ -3352,9 +3352,8 @@ function makeTable(t, o, cfg){
           if (a === b) continue;
           var na = eff(a), nb = eff(b);
           if (!(na >= 2 && nb >= 2)) continue;
-          var pa = r.cells[a].pct, pb = r.cells[b].pct;
+          var pa = r.cells[a].cp, pb = r.cells[b].cp;
           if (pa === null || pb === null) continue;
-          pa /= 100; pb /= 100;
           var pooled = (pa * na + pb * nb) / (na + nb);
           var se = Math.sqrt(pooled * (1 - pooled) * (1 / na + 1 / nb));
           if (!(se > 0)) continue;
@@ -3367,11 +3366,10 @@ function makeTable(t, o, cfg){
     var nT = eff(0);
     rows.forEach(function(r){
       if (skip(r)) return;
-      var pT = r.cells[0].pct; if (pT === null) return; pT /= 100;
+      var pT = r.cells[0].cp; if (pT === null) return;
       for (var c = 1; c < nC; c++){
-        var nc = eff(c), pc = r.cells[c].pct;
+        var nc = eff(c), pc = r.cells[c].cp;
         if (pc === null || !(nc >= 2)) continue;
-        pc /= 100;
         var nRest = nT - nc, xRest = pT * nT - pc * nc;
         if (!(nRest >= 2) || xRest < 0 || xRest > nRest) continue;
         var pRest = xRest / nRest, pool = (pc * nc + xRest) / (nc + nRest);
@@ -3908,7 +3906,11 @@ function saveCustomLocal(typing, noHist){
   custSaveTimer = setTimeout(function(){
     if (authorMode()){
       /* the builder runs inside the tool: the tabs go back to it, not to this browser's storage */
-      try { window.parent.postMessage({ type:'spss-atabs', tabs: cleanReports() }, '*'); } catch (e) {}
+      try {
+        /* the builder frame has the tool's origin; a file:// page has none, so it falls back to any */
+        var to = self.origin && self.origin !== 'null' ? self.origin : '*';
+        window.parent.postMessage({ type:'spss-atabs', tabs: cleanReports() }, to);
+      } catch (e) {}
       return;
     }
     try { localStorage.setItem(storeKey(), JSON.stringify({ reports: cleanReports(), tab: C.tab })); }
@@ -4642,7 +4644,7 @@ function cardSig(it, col, mv){
     var mT = t.mean[0], sT = t.sd[0], mc = t.mean[col], sc = t.sd[col];
     if ([mT, sT, mc, sc].some(function(x){ return x === null || x === undefined || isNaN(x); })) return '';
     var mR = (mT * nT - mc * nc) / nR;
-    var vR = ((nT - 1) * sT * sT + nT * mT * mT - (nc - 1) * sc * sc - nc * mc * mc - nR * mR * mR) / (nR - 1);
+    var vR = ((nT - 1) * sT * sT - (nc - 1) * sc * sc - (nc * nT / nR) * (mc - mT) * (mc - mT)) / (nR - 1);
     if (!(vR > 0)) return '';
     var a1 = sc * sc / nc, a2 = vR / nR, se = Math.sqrt(a1 + a2);
     if (!(se > 0)) return '';
@@ -6357,7 +6359,7 @@ boot();
 })(typeof self !== 'undefined' ? self : this, function (pako) {
   'use strict';
 
-  var SYSMIS_LO = -1.7976931348623157e308;
+  var SYSMIS_LO = -1e300;   /* -DBL_MAX and the slightly larger LOWEST that some programs write */
 
   function ascii(u8) {
     var s = '';
@@ -7531,7 +7533,8 @@ boot();
         if (o.pctBase === 'row') pct = rowTotalsW[r2] > 0 ? 100 * wn / rowTotalsW[r2] : null;
         else if (o.pctBase === 'total') pct = baseW[0] > 0 ? 100 * wn / baseW[0] : null;
         else pct = baseW[c4] > 0 ? 100 * wn / baseW[c4] : null;
-        cells.push({ n: n, wn: wn, pct: pct, sig: [], vsTotal: '' });
+        /* cp: the column proportion, which the significance tests use whatever percentage is shown */
+        cells.push({ n: n, wn: wn, pct: pct, cp: baseW[c4] > 0 ? wn / baseW[c4] : null, sig: [], vsTotal: '' });
       }
       rows.push({ label: rowDefs[r2].label, missing: !!rowDefs[r2].missing, key: rowDefs[r2].key, net: !!rowDefs[r2].net, cells: cells });
     }
@@ -7552,9 +7555,8 @@ boot();
               var na = effBase(baseN[a], baseW[a], baseW2[a], o.sigBase, !!w);
               var nb = effBase(baseN[b], baseW[b], baseW2[b], o.sigBase, !!w);
               if (!(na >= 2 && nb >= 2)) continue;
-              var pa = rows[rj].cells[a].pct, pb = rows[rj].cells[b].pct;
+              var pa = rows[rj].cells[a].cp, pb = rows[rj].cells[b].cp;
               if (pa === null || pb === null) continue;
-              pa /= 100; pb /= 100;
               var pooled = (pa * na + pb * nb) / (na + nb);
               var se = Math.sqrt(pooled * (1 - pooled) * (1 / na + 1 / nb));
               if (!(se > 0)) continue;
@@ -7574,14 +7576,12 @@ boot();
       var nT = effBase(baseN[0], baseW[0], baseW2[0], o.sigBase, !!w);
       for (var rt = 0; rt < nRows; rt++) {
         if (rows[rt].missing && !o.includeMissing) continue;
-        var pT = rows[rt].cells[0].pct;
+        var pT = rows[rt].cells[0].cp;
         if (pT === null) continue;
-        pT /= 100;
         for (var ct = 1; ct < nCols; ct++) {
           var nc = effBase(baseN[ct], baseW[ct], baseW2[ct], o.sigBase, !!w);
-          var pc = rows[rt].cells[ct].pct;
+          var pc = rows[rt].cells[ct].cp;
           if (pc === null || !(nc >= 2)) continue;
-          pc /= 100;
           var nRest = nT - nc, xRest = pT * nT - pc * nc;
           if (!(nRest >= 2) || xRest < 0 || xRest > nRest) continue;
           var pRest = xRest / nRest;
@@ -7640,7 +7640,9 @@ boot();
           var mean = sum[cm] / sumW[cm];
           var varc = sumsq[cm] / sumW[cm] - mean * mean;
           meanRow.push({ v: mean, n: baseN[cm] });
-          sdRow.push({ v: varc > 0 ? Math.sqrt(varc * (sumW[cm] / Math.max(sumW[cm] - 1, 1e-9))) : 0 });
+          /* the sample correction as in SPSS (W / (W - 1)); with a sum of weights of 1 or less, by the number of cases */
+          var bessel = sumW[cm] > 1 ? sumW[cm] / (sumW[cm] - 1) : (baseN[cm] > 1 ? baseN[cm] / (baseN[cm] - 1) : 1);
+          sdRow.push({ v: varc > 0 ? Math.sqrt(varc * bessel) : 0 });
         } else { meanRow.push({ v: null }); sdRow.push({ v: null }); }
       }
       if (o.sigEnabled) {
@@ -8038,6 +8040,8 @@ boot();
   }
 
   /* open answers: the first rows of the list (Word cannot fold), then a pointer to the full list in Excel */
+  /* Excel refuses sheet names over 31 characters or with []:*?/\ */
+  function xlSheetName(n) { return String(n || 'Sheet').replace(/[\[\]:*?\/\\]/g, ' ').replace(/^'+|'+$/g, '').slice(0, 31) || 'Sheet'; }
   function docxOpen(b, o, width) {
     var x = b && b.x; if (!x) return '';
     var w = width || 15138, grp = x.view === 'group';
@@ -8066,7 +8070,7 @@ boot();
   }
 
   function buildDocx(models, meta, o) {
-    var fontName = o.wordFont || 'Calibri';
+    var fontName = esc(o.wordFont || 'Calibri');
     var body = '';
     body += para(meta.title || 'Книга таблиць', { bold: true, size: 16, after: 60 });
     if (meta.subtitle) body += para(meta.subtitle, { italic: true, size: 9, color: '5A6376', after: 200 });
@@ -8164,7 +8168,7 @@ boot();
         push(grp ? [{ v: it.t, s: 0 }, { v: it.n, s: 8, num: true }] : [{ v: it.t, s: 0 }, { v: '', s: 0 }]);
       });
       var at = orows.length + 1;
-      push([{ v: x.xlMore + (list.length > show ? ' (' + list.length + ')' : ''), s: 44, link: "'" + osheet.replace(/'/g, "''") + "'!A" + at }]);
+      push([{ v: x.xlMore + (list.length > show ? ' (' + list.length + ')' : ''), s: 44, link: "'" + xlSheetName(osheet).replace(/'/g, "''") + "'!A" + at }]);
       opush([{ v: title || x.head, s: 12 }]);
       opush([{ v: x.base, s: 10 }]);
       opush([{ v: x.answer, s: 38 }, { v: x.count, s: 4 }]);
@@ -8370,8 +8374,8 @@ boot();
     var wb = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
       '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
       'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
-      '<sheets><sheet name="' + esc((o.L && o.L.sheetName) || 'Таблиці') + '" sheetId="1" r:id="rId1"/>' +
-      (sheet2 ? '<sheet name="' + esc(osheet) + '" sheetId="2" r:id="rId3"/>' : '') + '</sheets></workbook>';
+      '<sheets><sheet name="' + esc(xlSheetName((o.L && o.L.sheetName) || 'Таблиці')) + '" sheetId="1" r:id="rId1"/>' +
+      (sheet2 ? '<sheet name="' + esc(xlSheetName(osheet)) + '" sheetId="2" r:id="rId3"/>' : '') + '</sheets></workbook>';
     var wbRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
       '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
       '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
