@@ -834,7 +834,7 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
 
 <div class="bar">
   <h1 id="appTitle">SPSS Crosstabs</h1>
-  <span class="ver">version 6.2.1</span>
+  <span class="ver">version 6.3</span>
   <div class="seg viewsw" id="viewSw" role="group" style="display:none">
     <button type="button" id="viewTables" aria-pressed="true" data-i18n="view.tables"></button>
     <button type="button" id="railData" aria-pressed="false"><span class="lbl"></span></button>
@@ -1026,6 +1026,10 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
               <label class="opt"><input type="checkbox" class="swi" id="optSig" checked><span class="ot"><span class="ol" data-i18n="stats.sigL"></span>
                 <span class="oh" data-i18n="stats.sigH"></span></span></label>
               <button class="helpbtn" id="helpSig" type="button">?</button>
+            </div>
+            <div class="sub" data-dep="optSig">
+              <label class="opt"><input type="checkbox" class="swi" id="optBonf" checked><span class="ot"><span class="ol" data-i18n="stats.bonfL"></span>
+                <span class="oh" data-i18n="stats.bonfH"></span></span></label>
             </div>
             <div class="optrow">
               <label class="opt"><input type="checkbox" class="swi" id="optSigTotal"><span class="ot"><span class="ol" data-i18n="stats.sigTotalL"></span>
@@ -3186,12 +3190,14 @@ var NOTES = {
     noteN: function(n, kind){ return 'n = ' + n + ' (' + (kind === 'weighted' ? 'зважена база' : kind === 'effective' ? 'ефективна база' : 'незважена база') + ')'; },
     sigTotalNote: function(lvl){ return '▲ / ▼ — частка значущо вища / нижча, ніж у решті вибірки (' + lvl + '-й рівень довіри).'; },
     sigNote: function(lvl, eff){ return 'Літери позначають значущо вищу частку, ніж у колонці з відповідною літерою, в межах тієї самої змінної банера, ' + lvl + '-й рівень довіри (z-тест для часток' + (eff ? ', ефективна база' : '') + ').'; },
+    bonf: 'з поправкою Бонферроні',
     lowNote: function(min){ return 'Сірим позначено колонки з базою менше ' + min + ' спостережень: показники наведено довідково.'; }
   },
   en: {
     noteN: function(n, kind){ return 'n = ' + n + ' (' + (kind === 'weighted' ? 'weighted base' : kind === 'effective' ? 'effective base' : 'unweighted base') + ')'; },
     sigTotalNote: function(lvl){ return '▲ / ▼ — the share is significantly higher / lower than in the rest of the sample (' + lvl + ' confidence).'; },
     sigNote: function(lvl, eff){ return 'Letters mark a significantly higher share than in the column with that letter, within the same banner variable, at ' + lvl + ' confidence (z-test for proportions' + (eff ? ', effective base' : '') + ').'; },
+    bonf: 'Bonferroni-adjusted',
     lowNote: function(min){ return 'Columns in grey have a base below ' + min + ' cases: figures are indicative only.'; }
   }
 };
@@ -3344,8 +3350,11 @@ function makeTable(t, o, cfg){
   var twoZ = function(z){ return 2 * (1 - T.normCdf(Math.abs(z))); };
   var skip = function(r){ return r.missing && !o.includeMissing; };
 
+  /* Bonferroni (when the tool had it on): the level divided by the column pairs of each banner variable */
+  var gAlpha = function(g){ var k = g.colEnd - g.colStart + 1, m = k * (k - 1) / 2; return o.bonferroni && m > 1 ? alpha / m : alpha; };
   if (cfg.sig && groups.length){
     groups.forEach(function(g){
+      var aG = gAlpha(g);
       rows.forEach(function(r){
         if (skip(r)) return;
         for (var a = g.colStart; a <= g.colEnd; a++) for (var b = g.colStart; b <= g.colEnd; b++){
@@ -3357,7 +3366,7 @@ function makeTable(t, o, cfg){
           var pooled = (pa * na + pb * nb) / (na + nb);
           var se = Math.sqrt(pooled * (1 - pooled) * (1 / na + 1 / nb));
           if (!(se > 0)) continue;
-          if (twoZ((pa - pb) / se) < alpha && pa > pb) r.cells[a].sig.push(columns[b].letter);
+          if (twoZ((pa - pb) / se) < aG && pa > pb) r.cells[a].sig.push(columns[b].letter);
         }
       });
     });
@@ -3401,6 +3410,7 @@ function makeTable(t, o, cfg){
     sdRow = sv.map(function(v){ return { v: v === undefined ? null : v }; });
     if (cfg.sig){
       groups.forEach(function(g){
+        var aM = gAlpha(g);
         for (var a = g.colStart; a <= g.colEnd; a++) for (var b = g.colStart; b <= g.colEnd; b++){
           if (a === b) continue;
           var n1 = eff(a), n2 = eff(b);
@@ -3412,7 +3422,7 @@ function makeTable(t, o, cfg){
           var tt = (m1 - m2) / sp;
           var df = Math.pow(s1 * s1 / n1 + s2 * s2 / n2, 2) /
                    (Math.pow(s1 * s1 / n1, 2) / (n1 - 1) + Math.pow(s2 * s2 / n2, 2) / (n2 - 1));
-          if (T.tTestP(tt, df) < alpha && m1 > m2) meanRow[a].sig.push(columns[b].letter);
+          if (T.tTestP(tt, df) < aM && m1 > m2) meanRow[a].sig.push(columns[b].letter);
         }
       });
     }
@@ -7547,6 +7557,9 @@ boot();
       var alpha = 1 - (o.sigLevel || 0.95);
       for (var gi2 = 0; gi2 < groups.length; gi2++) {
         var gstart = groups[gi2].colStart, gend = groups[gi2].colEnd;
+        /* Bonferroni: the level divided by the number of column pairs in this banner variable */
+        var kG = gend - gstart + 1, pairsG = kG * (kG - 1) / 2;
+        var alphaG = o.bonferroni && pairsG > 1 ? alpha / pairsG : alpha;
         for (var rj = 0; rj < nRows; rj++) {
           if (rows[rj].missing && !o.includeMissing) continue;
           for (var a = gstart; a <= gend; a++) {
@@ -7562,7 +7575,7 @@ boot();
               if (!(se > 0)) continue;
               var zz = (pa - pb) / se;
               var p = twoSidedZ(zz);
-              if (p < alpha && pa > pb) rows[rj].cells[a].sig.push(banner.columns[b].letter);
+              if (p < alphaG && pa > pb) rows[rj].cells[a].sig.push(banner.columns[b].letter);
             }
           }
         }
@@ -7648,6 +7661,8 @@ boot();
       if (o.sigEnabled) {
         for (var gm = 0; gm < groups.length; gm++) {
           var ms = groups[gm].colStart, me = groups[gm].colEnd;
+          var kM = me - ms + 1, pairsM = kM * (kM - 1) / 2;
+          var alphaM = (1 - (o.sigLevel || 0.95)) / (o.bonferroni && pairsM > 1 ? pairsM : 1);
           for (var am = ms; am <= me; am++) {
             meanRow[am].sig = meanRow[am].sig || [];
             for (var bm = ms; bm <= me; bm++) {
@@ -7663,7 +7678,7 @@ boot();
               var dfw = Math.pow(s1 * s1 / n1 + s2 * s2 / n2, 2) /
                 (Math.pow(s1 * s1 / n1, 2) / (n1 - 1) + Math.pow(s2 * s2 / n2, 2) / (n2 - 1));
               var pt = tTestP(t, dfw);
-              if (pt < 1 - (o.sigLevel || 0.95) && m1 > m2) meanRow[am].sig.push(banner.columns[bm].letter);
+              if (pt < alphaM && m1 > m2) meanRow[am].sig.push(banner.columns[bm].letter);
             }
           }
         }
@@ -7877,10 +7892,14 @@ boot();
     if (o.sigVsTotal && table.groups.length)
       notes.push(L.sigTotalNote ? L.sigTotalNote(lvl)
         : ('\u25B2/\u25BC — частка значущо вища/нижча за показник по вибірці загалом (' + lvl + ').'));
-    if (o.sigEnabled && table.groups.length)
-      notes.push(L.sigNote ? L.sigNote(lvl, table.weighted)
+    if (o.sigEnabled && table.groups.length) {
+      var sn = L.sigNote ? L.sigNote(lvl, table.weighted)
         : ('Літери позначають значущо вищу частку порівняно з відповідною колонкою в межах тієї самої групи банера, ' +
-           lvl + '-й рівень довіри (z-тест для часток' + (table.weighted ? ', ефективна база' : '') + ').'));
+           lvl + '-й рівень довіри (z-тест для часток' + (table.weighted ? ', ефективна база' : '') + ').');
+      /* with the Bonferroni correction the note says so inside its brackets */
+      if (o.bonferroni) sn = sn.replace(/\)\.\s*$/, ', ' + (L.bonf || 'з поправкою Бонферроні') + ').');
+      notes.push(sn);
+    }
     if (o.chiSquare && table.chi && table.chi.length) {
       var sep = o.sep || ',';
       var parts = table.chi.map(function (c) {
@@ -8499,6 +8518,7 @@ var DICT = {
     'cells.techL':'Technical categories stay at the bottom', 'cells.techH':'When sorting, “don’t know”, “refusal” and the like stay at the end of the table.',
     'cells.meansL':'Statistics for numeric variables', 'cells.meansH':'Mean, median and so on for variables without value labels (age, income).',
     'cells.statList':'Statistics',
+    'stats.bonfL':'Bonferroni correction', 'stats.bonfH':'As in SPSS Custom Tables: the significance level is divided by the number of column pairs within a banner variable, so fewer chance differences are marked.',
     'stats.sigL':'Differences between columns', 'stats.sigH':'A letter next to a figure names the column it is significantly higher than, within one banner variable.',
     'stats.sigTotalL':'Difference from the Total column', 'stats.sigTotalH':'▲ / ▼ next to a figure: the share is significantly higher or lower than in Total.',
     'stats.baseH':'For weighted data. The effective base accounts better for the effect of weighting on the error.',
@@ -8699,6 +8719,7 @@ var DICT = {
     'cells.techL':'Технічні категорії — завжди внизу', 'cells.techH':'Під час сортування «Важко сказати», «Відмова» тощо лишаються в кінці таблиці.',
     'cells.meansL':'Статистики для числових змінних', 'cells.meansH':'Середнє, медіана тощо для змінних без міток значень (вік, дохід).',
     'cells.statList':'Які статистики',
+    'stats.bonfL':'Поправка Бонферроні', 'stats.bonfH':'Як у SPSS Custom Tables: рівень значущості ділиться на кількість пар колонок у межах змінної банера, тож випадкових різниць позначається менше.',
     'stats.sigL':'Різниці між колонками', 'stats.sigH':'Літера біля числа — колонка, від якої ця частка значущо вища (у межах однієї змінної банера).',
     'stats.sigTotalL':'Відмінність від колонки «Усього»', 'stats.sigTotalH':'▲ / ▼ біля числа: частка значущо вища або нижча, ніж в «Усього».',
     'stats.baseH':'Для зважених даних. Ефективна база точніше враховує вплив ваги на похибку.',
@@ -9257,7 +9278,7 @@ function modelLabels(){
     chiPrefix: L('model.chiPrefix'), chiNA: L('model.chiNA'), sheetName: L('model.sheet'),
     noteN: P().noteN, sigTotalNote: P().sigTotalNote,
     pctCol: L('pctCol'), pctRow: L('pctRow'), pctTotal: L('pctTotal'),
-    sigNote: P().sigNote, lowNote: P().lowNote
+    sigNote: P().sigNote, lowNote: P().lowNote, bonf: lang === 'en' ? 'Bonferroni-adjusted' : 'з поправкою Бонферроні'
   };
 }
 
@@ -9368,6 +9389,7 @@ function readOpts(){
     techWords: state.techList.map(function(x){ return String(x).trim().toLowerCase(); })
                  .filter(function(x){ return x.length > 1; }),
     sigEnabled: $('optSig').checked,
+    bonferroni: $('optSig').checked && $('optBonf').checked,
     sigLevel: parseFloat($('sigLevel').value),
     sigBase: $('sigBase').value,
     sigVsTotal: $('optSigTotal').checked,
@@ -9414,7 +9436,7 @@ function currentConfig(){
       optSort:$('optSort').checked, optTotalRow:$('optTotalRow').checked,
       basePos:$('basePos').value, optTech:$('optTech').checked,
       rowOrder:$('rowOrder').value, optSplitWord:$('optSplitWord').checked,
-      optSig:$('optSig').checked, optSigTotal:$('optSigTotal').checked,
+      optSig:$('optSig').checked, optSigTotal:$('optSigTotal').checked, optBonf:$('optBonf').checked,
       sigLevel:$('sigLevel').value, sigBase:$('sigBase').value,
       sigColor:$('sigColor').value, sigFill:$('sigFill').value,
       optChi:$('optChi').checked, minBase:$('minBase').value, optSuppress:$('optSuppress').checked,
@@ -9581,6 +9603,7 @@ function applyUi(u){
     if (u.rowOrder) $('rowOrder').value = u.rowOrder;
     $('optSplitWord').checked = !!u.optSplitWord;
     $('optSig').checked = !!u.optSig; $('optSigTotal').checked = !!u.optSigTotal;
+    $('optBonf').checked = u.optBonf === undefined ? true : !!u.optBonf;
     $('sigLevel').value = u.sigLevel || '0.95'; $('sigBase').value = u.sigBase || 'effective';
     $('optChi').checked = !!u.optChi; $('minBase').value = u.minBase || '50';
     $('optSuppress').checked = !!u.optSuppress;
@@ -12054,7 +12077,7 @@ function buildReportPayload(){
     }),
     saved: new Date().toISOString(),
     opts: {
-      decimals: o.decimals, pctBase: o.pctBase, sigLevel: o.sigLevel, sigBase: o.sigBase, chiSquare: o.chiSquare,
+      decimals: o.decimals, pctBase: o.pctBase, sigLevel: o.sigLevel, sigBase: o.sigBase, chiSquare: o.chiSquare, bonferroni: !!o.bonferroni,
       minBase: o.minBase, basePosition: o.basePosition, showEffBase: o.showEffBase, totalRow: o.totalRow,
       baseNote: o.baseNote, sigColorHex: o.sigColorHex, sigFillHex: o.sigFillHex, includeMissing: o.includeMissing
     },
@@ -13747,7 +13770,7 @@ $('viewTables').addEventListener('click', function(){ exitDataMode(); setTimeout
 $('selWeight').addEventListener('change', function(){
   state.weightName = $('selWeight').value; applyWeight(); renderDataNotes(); saveConfig(); scheduleCompute();
 });
-['mPct','mN','mWn','pctBase','decimals','optMeans','numMode','stMean','stMedian','stMin','stMax','stSd','optMissing','optEffBase','optSort','optTotalRow','basePos','optTech','rowOrder','optSplitWord','baseNote','optSig','optSigTotal','sigLevel','sigBase','sigColor','sigFill','optChi','minBase','optSuppress']
+['mPct','mN','mWn','pctBase','decimals','optMeans','numMode','stMean','stMedian','stMin','stMax','stSd','optMissing','optEffBase','optSort','optTotalRow','basePos','optTech','rowOrder','optSplitWord','baseNote','optSig','optSigTotal','optBonf','sigLevel','sigBase','sigColor','sigFill','optChi','minBase','optSuppress']
   .forEach(function(id){ $(id).addEventListener('change', function(){ saveConfig(); scheduleCompute(); }); });
 ['wordFont','wordSize','bookTitle'].forEach(function(id){ $(id).addEventListener('change', saveConfig); });
 $('optMeans').addEventListener('change', syncNumBox);
