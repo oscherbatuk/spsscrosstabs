@@ -587,6 +587,8 @@ table.ct tr.netrow td.lbl{font-weight:600}
 .ve-row:last-child{border-bottom:0}
 .ve-code{min-width:42px; color:var(--muted); font-variant-numeric:tabular-nums; font-size:12.5px}
 .ve-row input{flex:1; padding:4px 7px}
+.ve-sub{margin:10px 0 2px; padding:6px 8px; font-size:12px; color:var(--ink); background:color-mix(in srgb, #F59E0B 16%, var(--surface)); border-radius:5px}
+.ve-row.unlab .ve-code{color:#B45309; font-weight:600}
 table.ct .techbtn.on{color:var(--sig)}
 table.ct tr.tech td.lbl{color:var(--muted); font-style:italic}
 table.ct th.gsep,table.ct td.gsep{border-left:2px solid var(--muted)}
@@ -834,7 +836,7 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
 
 <div class="bar">
   <h1 id="appTitle">SPSS Crosstabs</h1>
-  <span class="ver">version 6.3</span>
+  <span class="ver">version 6.3.1</span>
   <div class="seg viewsw" id="viewSw" role="group" style="display:none">
     <button type="button" id="viewTables" aria-pressed="true" data-i18n="view.tables"></button>
     <button type="button" id="railData" aria-pressed="false"><span class="lbl"></span></button>
@@ -8619,6 +8621,7 @@ var DICT = {
     'model.excl':'Excluded from the base: ', 'model.exclSet':'Excluded from the set: ',
     've.title':'Edit variable', 've.label':'Question text (variable label)', 've.values':'Value labels',
     've.orig':'original', 've.noValues':'This variable has no value labels.',
+    've.unlab':'Codes in the data without a label — write one to show it in the tables and the saved .sav', 've.unlabPh':'no label in the file',
     've.hint':'Changes apply to every table, the exports and the corrected .sav; the original file is not touched. They are kept in the settings file.',
     've.reset':'restore original', 've.save':'Save', 've.btn':'edit the question text and value labels',
     'mod.title':'New modified table', 'mod.editTitle':'Edit the modified table', 'mod.name':'Table title',
@@ -8820,6 +8823,7 @@ var DICT = {
     'model.excl':'Виключено з бази: ', 'model.exclSet':'Виключено з набору: ',
     've.title':'Редагування змінної', 've.label':'Текст питання (мітка змінної)', 've.values':'Мітки значень',
     've.orig':'оригінал', 've.noValues':'У цієї змінної немає міток значень.',
+    've.unlab':'Коди в масиві без мітки — впишіть мітку, і вона з’явиться в таблицях та збереженому .sav', 've.unlabPh':'у файлі мітки немає',
     've.hint':'Зміни застосовуються в усіх таблицях, експортах і виправленому .sav; вихідний файл не змінюється. Вони зберігаються у файлі налаштувань.',
     've.reset':'повернути оригінал', 've.save':'Зберегти', 've.btn':'редагувати текст питання і мітки значень',
     'mod.title':'Нова модифікована таблиця', 'mod.editTitle':'Редагування модифікованої таблиці', 'mod.name':'Назва таблиці',
@@ -12221,7 +12225,35 @@ function applyVarEdits(){
       var k = String(p.value);
       return { value:p.value, label: e.values && e.values[k] !== undefined ? e.values[k] : p.label };
     }) : null;
+    /* labels written for codes that had none in the file: added in code order */
+    if (e.values){
+      var have = {};
+      (v.__orig.vl || []).forEach(function(p){ have[String(p.value)] = 1; });
+      Object.keys(e.values).forEach(function(k){
+        if (have[k] || !e.values[k]) return;
+        var val = v.type === 'string' ? k : parseFloat(k);
+        if (v.type !== 'string' && isNaN(val)) return;
+        var list = v.valueLabels || (v.valueLabels = []), at = list.length;
+        if (v.type !== 'string') for (var i = 0; i < list.length; i++) if (typeof list[i].value === 'number' && list[i].value > val){ at = i; break; }
+        list.splice(at, 0, { value: val, label: e.values[k] });
+      });
+    }
   });
+}
+/* codes that occur in the data but have no label (a new answer in a later wave, say) */
+function unlabeledCodes(v){
+  if (!v.__orig || !v.__orig.vl || !v.__orig.vl.length) return [];
+  var have = {}, seen = {}, out = [], d = v.data;
+  v.__orig.vl.forEach(function(p){ have[String(p.value)] = 1; });
+  for (var i = 0; i < d.length && out.length < 100; i++){
+    var x = d[i];
+    if (x === null || x === undefined || (typeof x === 'number' && isNaN(x)) || T.isSysmis(x)) continue;
+    var k = v.type === 'string' ? String(x).replace(/\s+$/, '') : String(x);
+    if (k === '' || have[k] || seen[k]) continue;
+    seen[k] = 1; out.push({ key: k, value: v.type === 'string' ? k : x });
+  }
+  out.sort(function(a, b){ return v.type === 'string' ? String(a.key).localeCompare(String(b.key)) : a.value - b.value; });
+  return out;
 }
 function isEdited(v){ var e = state.varEdits[v.name]; return !!(e && (e.label !== undefined || (e.values && Object.keys(e.values).length))); }
 function afterLabelChange(){
@@ -12237,7 +12269,9 @@ function openVarEditor(v){
   if (v.__orig && v.__orig.vl && v.__orig.vl.length){
     md.body.appendChild(mkEl('div', 'mini', L('ve.values')));
     var tbl = mkEl('div', 've-list');
-    v.valueLabels.forEach(function(p, i){
+    v.__orig.vl.forEach(function(op, i){
+      var p = { value: op.value, label: (v.valueLabels || []).filter(function(q){ return String(q.value) === String(op.value); }).map(function(q){ return q.label; })[0] };
+      if (p.label === undefined) p.label = op.label;
       var row = mkEl('div', 've-row');
       row.appendChild(mkEl('span', 've-code', String(p.value)));
       var inp = document.createElement('input'); inp.type = 'text'; inp.value = p.label;
@@ -12245,6 +12279,19 @@ function openVarEditor(v){
       row.appendChild(inp); tbl.appendChild(row);
       inputs.push({ key:String(p.value), inp:inp, orig:v.__orig.vl[i].label });
     });
+    /* codes in the data without a label in the file: a label can be written for them here */
+    var e0 = state.varEdits[v.name] || {}, extra = unlabeledCodes(v);
+    if (extra.length){
+      tbl.appendChild(mkEl('div', 've-sub', L('ve.unlab')));
+      extra.forEach(function(c){
+        var row = mkEl('div', 've-row unlab');
+        row.appendChild(mkEl('span', 've-code', c.key));
+        var inp = document.createElement('input'); inp.type = 'text'; inp.placeholder = L('ve.unlabPh');
+        inp.value = e0.values && e0.values[c.key] !== undefined ? e0.values[c.key] : '';
+        row.appendChild(inp); tbl.appendChild(row);
+        inputs.push({ key:c.key, inp:inp, orig:'' });
+      });
+    }
     md.body.appendChild(tbl);
   } else md.body.appendChild(mkEl('p', 'mini', L('ve.noValues')));
   md.body.appendChild(mkEl('p', 'mini', L('ve.hint')));
