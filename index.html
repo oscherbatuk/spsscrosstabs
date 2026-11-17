@@ -836,7 +836,7 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
 
 <div class="bar">
   <h1 id="appTitle">SPSS Crosstabs</h1>
-  <span class="ver">version 6.3.1</span>
+  <span class="ver">version 6.3.2</span>
   <div class="seg viewsw" id="viewSw" role="group" style="display:none">
     <button type="button" id="viewTables" aria-pressed="true" data-i18n="view.tables"></button>
     <button type="button" id="railData" aria-pressed="false"><span class="lbl"></span></button>
@@ -8199,17 +8199,21 @@ boot();
       x.items.forEach(function (it) { opush([{ v: it.t, s: 0 }, { v: it.id === undefined || it.id === null ? '' : it.id, s: 8, num: typeof it.id === 'number' }]); });
       opush([]); opush([]);
     }
-    function pushComment(m) {
-      /* merged across the table so the text wraps at the table's width; the height is estimated from the length */
-      var span = Math.max(m.colCount, 6), perLine = 46 + 13 * (span - 1);
-      String(m.__comment).split(/\r?\n/).forEach(function (line) {
-        var cells = [{ v: line, s: 42 }];
-        for (var k = 1; k < span; k++) cells.push({ v: '', s: 42 });
-        merges.push({ r: r, c1: 0, c2: span - 1 });
-        heights[r] = Math.max(1, Math.ceil(line.length * 1.08 / perLine)) * 13.5 + 4;
+    /* long text under a table (a comment, a note): merged across exactly the table's width so it wraps there
+       and does not run past the table; the row height is estimated from the length, since Excel does not
+       fit merged cells by itself */
+    function pushWrap(text, st, span, lineH, always, fac) {
+      var perLine = 46 + 13 * (span - 1);
+      String(text).split(/\r?\n/).forEach(function (line) {
+        var cells = [{ v: line, s: st }];
+        for (var k = 1; k < span; k++) cells.push({ v: '', s: st });
+        if (span > 1) merges.push({ r: r, c1: 0, c2: span - 1 });
+        var lines = Math.max(1, Math.ceil(line.length * (fac || 1.1) / perLine));
+        if (lines > 1 || always) heights[r] = lines * lineH + 4;
         push(cells);
       });
     }
+    function pushComment(m) { pushWrap(m.__comment, 42, Math.max(2, m.colCount || 2), 13.5, true); }
 
     push([{ v: meta.title || 'Книга таблиць', s: 12 }]);
     if (meta.subtitle) push([{ v: meta.subtitle, s: 10 }]);
@@ -8275,7 +8279,7 @@ boot();
         push(line);
       });
 
-      m.notes.forEach(function (n) { push([{ v: n, s: 10 }]); });
+      m.notes.forEach(function (n) { pushWrap(n, 46, Math.max(2, m.colCount || 2), 12.5, false, 0.9); });
       (m.__opens || []).forEach(function (b) { xlOpen(b, b.x && b.x.head); });
       if (m.__comment) pushComment(m);
       push([]);
@@ -8348,7 +8352,8 @@ boot();
       { nf:0,   font:1, fill:2, bd:1, al:'left',   wrap:true },
       { nf:0,   font:4, fill:0, bd:0, al:'left' },                    /* 20: section heading */
       { nf:0,   font:5, fill:7, bd:0, al:'left',   wrap:true, va:'top' },  /* 21: analytical comment */
-      { nf:0,   font:6, fill:0, bd:0, al:'left' }                     /* 22: a link to the open answers sheet */
+      { nf:0,   font:6, fill:0, bd:0, al:'left' },                    /* 22: a link to the open answers sheet */
+      { nf:0,   font:2, fill:0, bd:0, al:'left',   wrap:true, va:'top' }   /* 23: a note under a table, wrapped */
     ];
     var sepBorder = { 0:0, 1:3, 2:4 };
     var xfs = '';
