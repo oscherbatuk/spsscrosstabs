@@ -836,7 +836,7 @@ table.ct tbody tr:hover td.tot{background:var(--row-hover-tot)}
 
 <div class="bar">
   <h1 id="appTitle">SPSS Crosstabs</h1>
-  <span class="ver">version 6.3.2</span>
+  <span class="ver">version 6.3.3</span>
   <div class="seg viewsw" id="viewSw" role="group" style="display:none">
     <button type="button" id="viewTables" aria-pressed="true" data-i18n="view.tables"></button>
     <button type="button" id="railData" aria-pressed="false"><span class="lbl"></span></button>
@@ -6401,6 +6401,28 @@ boot();
     try { new TextDecoder('utf-8', { fatal: true }).decode(u8); return true; }
     catch (e) { return false; }
   }
+  /* how many of the texts with letters outside ASCII are valid UTF-8, label by label. A label cut at its byte limit
+     may end in half a character, so an incomplete sequence at the very end does not count against it. */
+  function utf8Share(items) {
+    var ok = 0, bad = 0, strict = new TextDecoder('utf-8', { fatal: true });
+    items.forEach(function (raw) {
+      if (!raw || !raw.length) return;
+      var hi = false;
+      for (var i = 0; i < raw.length; i++) if (raw[i] >= 0x80) { hi = true; break; }
+      if (!hi) return;
+      var end = raw.length;
+      while (end > 0 && raw[end - 1] === 0) end--;
+      /* drop a trailing incomplete sequence: up to 3 continuation bytes after a lead byte */
+      var k = end - 1, back = 0;
+      while (k >= 0 && back < 3 && (raw[k] & 0xC0) === 0x80) { k--; back++; }
+      if (k >= 0 && raw[k] >= 0xC0) {
+        var need = raw[k] >= 0xF0 ? 3 : raw[k] >= 0xE0 ? 2 : 1;
+        if (back < need) end = k;
+      }
+      try { strict.decode(raw.subarray(0, end)); ok++; } catch (e) { bad++; }
+    });
+    return ok + bad ? ok / (ok + bad) : -1;
+  }
 
   function trimRight(s) { return s.replace(/[\s\u0000]+$/, ''); }
 
@@ -6560,15 +6582,16 @@ boot();
     var probeAll = new Uint8Array(probeLen); var po = 0;
     probe.forEach(function (p) { probeAll.set(p, po); po += p.length; });
 
-    var encUse = encodingName;
-    if (!encUse || /^\d+$/.test(encUse)) encUse = looksUtf8(probeAll) ? 'utf-8' : 'windows-1251';
-    else {
-      var test = makeDecoder(encUse);
-      if (/utf-?8/i.test(encUse) && !looksUtf8(probeAll)) encUse = 'windows-1251';
-      void test;
-    }
+    /* the declared encoding is checked against the labels themselves: files where the header says one code page
+       while the texts are in UTF-8 (or the other way round) are common, and a label cut in the middle of a letter
+       must not turn a UTF-8 file into Windows-1251 */
+    var encUse = encodingName, share = utf8Share(probe);
+    if (!encUse || /^\d+$/.test(encUse)) encUse = share < 0 || share >= 0.9 ? 'utf-8' : 'windows-1251';
+    else if (/utf-?8/i.test(encUse)) { if (share >= 0 && share < 0.5) encUse = 'windows-1251'; }
+    else if (share >= 0.9) encUse = 'utf-8';
     var D = makeDecoder(encUse);
-    var dec = function (raw) { return raw ? trimRight(D.decode(raw)) : ''; };
+    /* half a letter left at a byte limit decodes as U+FFFD: it is dropped */
+    var dec = function (raw) { return raw ? trimRight(D.decode(raw)).replace(/\uFFFD+$/, '') : ''; };
 
     /* ---------- variables ---------- */
     var vars = [], dictIndexToVar = {};
